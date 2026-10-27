@@ -89,7 +89,8 @@ class RouteController(
     fun selectMode(mode: TravelMode) {
         this.mode = mode
         selectedVariant = 0
-        fit()
+        // After a reroute only the mode in use was rebuilt; the others load when chosen.
+        if (results[mode] == null && results.isNotEmpty()) requestMode(mode) else fit()
     }
 
     fun selectVariant(index: Int) {
@@ -197,15 +198,40 @@ class RouteController(
         routeService.cancelAll()
         results.clear()
         selectedVariant = 0
+        TravelMode.entries.forEach { requestMode(it) }
+    }
+
+    private fun requestMode(mode: TravelMode) {
         val to = to ?: return
         val from = from ?: return
-        TravelMode.entries.forEach { mode ->
-            results[mode] = RouteResult(loading = true)
-            val points = listOf(from.point) + stops.map { it.point } + to.point
-            routeService.request(mode, points) { result ->
-                results[mode] = result
-                if (mode == this.mode) onLoaded(result)
-            }
+        results[mode] = RouteResult(loading = true)
+        val points = listOf(from.point) + stops.map { it.point } + to.point
+        routeService.request(mode, points) { result ->
+            results[mode] = result
+            if (mode == this.mode) onLoaded(result)
+        }
+    }
+
+    /**
+     * I left the route in guidance: a new one from [from] through the [stops] still ahead,
+     * for the mode in use only. The old route stays on the map until the new one arrives;
+     * [done] gets false when none was found.
+     */
+    fun reroute(from: Waypoint, stops: List<Waypoint>, done: (Boolean) -> Unit) {
+        val to = to ?: return done(false)
+        val mode = mode
+        routeService.cancelAll()
+        // The other modes were planned from the old start; they load again when chosen.
+        TravelMode.entries.filter { it != mode }.forEach { results.remove(it) }
+        routeService.request(mode, listOf(from.point) + stops.map { it.point } + to.point) { result ->
+            if (result.variants.isEmpty() || mode != this.mode) return@request done(false)
+            this.from = from
+            this.stops.clear()
+            this.stops.addAll(stops)
+            stopsBeforeOptimize = null
+            selectedVariant = 0
+            results[mode] = result
+            done(true)
         }
     }
 

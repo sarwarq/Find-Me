@@ -53,6 +53,13 @@ class NavTrackerTest {
     }
 
     @Test
+    fun `distance from the route line, for rebuilding the route`() {
+        val t = NavTracker(variant(lineNorth(1000.0)))
+        assertEquals(5.0, t.at(5.0, 300.0).offRouteMeters, 0.5)
+        assertEquals(80.0, t.at(-80.0, 320.0).offRouteMeters, 0.5)
+    }
+
+    @Test
     fun `arrived in the last 25 meters`() {
         val t = NavTracker(variant(lineNorth(1000.0)))
         assertFalse(t.at(0.0, 960.0).arrived)

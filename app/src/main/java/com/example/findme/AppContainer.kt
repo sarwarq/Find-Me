@@ -13,6 +13,7 @@ import com.example.findme.maps.PlaceSearchService
 import com.example.findme.maps.RouteService
 import com.example.findme.ui.MapViewModel
 import com.example.findme.ui.meet.MeetViewModel
+import com.example.findme.ui.nav.Voice
 import com.example.findme.ui.profile.AuthViewModel
 
 /**
@@ -29,6 +30,7 @@ class AppContainer(private val app: Application) {
     val meetings by lazy { MeetingRepository(app) }
     val auth by lazy { AuthRepository(app) }
     val location: LocationRepository get() = LocationRepository
+    val voice by lazy { Voice(app) }
 
     // ---------- New for each screen ----------
     // MapKit requests are cancelled together with the screen that made them.
@@ -45,6 +47,7 @@ class AppContainer(private val app: Application) {
                 places = newPlaceSearch(),
                 routeService = newRouteService(),
                 location = location,
+                voice = voice,
             )
         }
         initializer { MeetViewModel(app, meetings, navStore, location) }

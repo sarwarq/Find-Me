@@ -18,6 +18,8 @@ data class NavProgress(
     val limitKmh: Int?,
     val next: Maneuver,
     val nextInMeters: Double,
+    /** Track segment where [next] starts: tells one maneuver from the next. */
+    val nextSegment: Int = -1,
     /** Public transport: index of the current step in [RouteVariant.steps], or -1. */
     val step: Int = -1,
     /** Next stop on the way (index in the route's stops), or -1 when only the destination is left. */
@@ -41,6 +43,8 @@ class NavUpdate(
     val alongMeters: Double = 0.0,
     /** Close enough to the route to count as on it. */
     val onRoute: Boolean = false,
+    /** How far I am from the route line, in meters. */
+    val offRouteMeters: Double = 0.0,
 )
 
 /**
@@ -114,6 +118,7 @@ class NavTracker(private val variant: RouteVariant) {
             limitKmh = track.speedLimits.getOrNull(best)?.let { (it * 3.6f).roundToInt() }?.takeIf { it > 0 },
             next = next?.maneuver ?: Maneuver.Straight,
             nextInMeters = (nextAt - along).coerceAtLeast(0.0),
+            nextSegment = next?.segment ?: -1,
             trackSegment = best,
             trackT = bestT,
         )
@@ -122,6 +127,7 @@ class NavTracker(private val variant: RouteVariant) {
             arrived = remaining < ARRIVED_M,
             alongMeters = along,
             onRoute = bestDist < ON_ROUTE_M,
+            offRouteMeters = bestDist,
         )
     }
 

@@ -74,6 +74,7 @@ import com.example.findme.data.RouteVariant
 import com.example.findme.data.TransitStep
 import com.example.findme.data.TravelMode
 import com.example.findme.data.WaypointSlot
+import com.example.findme.data.rideName
 import com.example.findme.ui.MapViewModel
 import com.example.findme.ui.components.CircleIconButton
 import com.example.findme.ui.components.YIcon
@@ -807,20 +808,6 @@ private fun TransitInstruction(steps: List<TransitStep>, index: Int) {
             )
         }
     }
-}
-
-/** "Bus 12", "Metro M1", "Train". */
-private fun rideName(step: TransitStep): String {
-    val kind = when (step.vehicle) {
-        "bus" -> "Bus"
-        "minibus" -> "Minibus"
-        "trolleybus" -> "Trolleybus"
-        "tramway", "tram" -> "Tram"
-        "underground" -> "Metro"
-        "railway", "suburban" -> "Train"
-        else -> "Ride"
-    }
-    return listOfNotNull(kind, step.lineName).joinToString(" ")
 }
 
 private fun stopsText(n: Int) = if (n == 1) "1 stop" else "$n stops"

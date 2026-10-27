@@ -28,6 +28,7 @@ import com.example.findme.maps.PlaceSearchService
 import com.example.findme.maps.RouteService
 import com.example.findme.maps.toPlace
 import com.example.findme.ui.nav.NavigationController
+import com.example.findme.ui.nav.Voice
 import com.example.findme.ui.route.RouteController
 import com.example.findme.ui.search.SearchController
 import com.yandex.mapkit.GeoObject
@@ -40,6 +41,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.max
 
 sealed interface Screen {
@@ -79,6 +81,8 @@ class MapViewModel(
     private val places: PlaceSearchService,
     private val routeService: RouteService,
     private val location: LocationRepository,
+    /** Spoken guidance, and its sound button. */
+    val voice: Voice,
 ) : ViewModel() {
 
     val commands = MutableSharedFlow<MapCommand>(extraBufferCapacity = 16)
@@ -90,7 +94,11 @@ class MapViewModel(
         say = { message = it },
         openSearch = { slot -> search.open(slot = slot) },
     )
-    val nav = NavigationController(route, navStore, location, viewModelScope, commands, say = { message = it })
+    val nav = NavigationController(
+        route, navStore, location, viewModelScope, commands,
+        say = { message = it },
+        speak = voice::speak,
+    )
 
     // ---------- Navigation between screens ----------
 
@@ -532,14 +540,20 @@ class MapViewModel(
     }
 
     /** Debug builds: drive the current route with a fake location (see MainActivity). */
-    fun simulateDrive(speedMps: Double, gpsHeading: Boolean) {
+    /** [shiftM] > 0 drives that far east of the route, to try rebuilding the route. */
+    fun simulateDrive(speedMps: Double, gpsHeading: Boolean, shiftM: Double = 0.0) {
         val points = route.currentVariant?.track?.points
         if (points == null || points.size < 2) {
             message = "Build a route first"
             return
         }
-        location.simulate(points, speedMps, gpsHeading)
-        message = "Test drive: ${(speedMps * 3.6).toInt()} km/h" + if (gpsHeading) "" else ", no GPS course"
+        val path = if (shiftM <= 0) points else points.map {
+            Point(it.latitude, it.longitude + shiftM / (Geo.M_PER_DEG * cos(Math.toRadians(it.latitude))))
+        }
+        location.simulate(path, speedMps, gpsHeading)
+        message = "Test drive: ${(speedMps * 3.6).toInt()} km/h" +
+            (if (gpsHeading) "" else ", no GPS course") +
+            (if (shiftM > 0) ", ${shiftM.toInt()} m off the route" else "")
     }
 
     fun zoomIn() = commands.tryEmit(MapCommand.ZoomIn)

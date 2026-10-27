@@ -82,9 +82,14 @@ class MainActivity : ComponentActivity() {
         // Debug builds only, test drive along the current route with a fake location:
         // adb shell am start -n bsb.findme.app/com.example.findme.MainActivity
         //   -a android.intent.action.VIEW -d "findme://simulate?speed=15&heading=0"
+        // shift=80 drives 80 m east of the route, to try rebuilding the route.
         if (uri.host == "simulate" && applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
             val speed = uri.getQueryParameter("speed")?.toDoubleOrNull() ?: 15.0
-            vm.simulateDrive(speed, gpsHeading = uri.getQueryParameter("heading") != "0")
+            vm.simulateDrive(
+                speed,
+                gpsHeading = uri.getQueryParameter("heading") != "0",
+                shiftM = uri.getQueryParameter("shift")?.toDoubleOrNull() ?: 0.0,
+            )
             return
         }
         if (uri.host != "join") return

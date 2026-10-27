@@ -7,6 +7,8 @@ import androidx.compose.runtime.setValue
 import com.example.findme.data.NavStore
 import com.example.findme.data.RouteResult
 import com.example.findme.data.SavedNav
+import com.example.findme.data.TravelMode
+import com.example.findme.data.Waypoint
 import com.example.findme.data.location.LocationFix
 import com.example.findme.data.location.LocationRepository
 import com.example.findme.ui.MapCommand
@@ -26,13 +28,19 @@ class NavigationController(
     private val scope: CoroutineScope,
     private val commands: MutableSharedFlow<MapCommand>,
     private val say: (String) -> Unit,
+    /** Spoken guidance: turns, stops, arrival, a new route. */
+    private val speak: (String) -> Unit,
 ) {
     var active by mutableStateOf(false); private set
     var progress by mutableStateOf<NavProgress?>(null); private set
     /** The user moved the map in guidance: the camera stops following for [FREE_MS]. */
     var free by mutableStateOf(false); private set
+    /** I left the route and a new one is on its way. */
+    var rerouting by mutableStateOf(false); private set
 
     private var tracker: NavTracker? = null
+    private val offRoute = OffRouteDetector()
+    private var prompter: VoicePrompter? = null
     /** Where I'm going: along the road on the route, else from GPS / movement. */
     private var heading: Float? = null
     /** Where I am along the route (null off it) and how fast, for the gliding arrow. */
@@ -79,6 +87,8 @@ class NavigationController(
         }
         tracker = NavTracker(variant)
         active = true
+        prompter = VoicePrompter(route.mode)
+        offRoute.reset()
         location.setTravelMode(route.mode)
         route.to?.let { store.save(it, route.mode, route.stops.toList()) }
         track(me, speed = null)
@@ -99,6 +109,8 @@ class NavigationController(
         location.setTravelMode(null)
         progress = null
         tracker = null
+        prompter = null
+        rerouting = false
         freeJob?.cancel()
         freeJob = null
         free = false
@@ -145,13 +157,53 @@ class NavigationController(
         this.speed = speed
         if (update == null) return
         update.reachedStops.forEach { i ->
-            say("Stop ${i + 1} reached: ${route.stops.getOrNull(i)?.name.orEmpty()}")
+            val name = route.stops.getOrNull(i)?.name.orEmpty()
+            say("Stop ${i + 1} reached: $name")
+            speak("You have reached $name")
         }
         if (update.reachedStops.isNotEmpty()) store.updateStops(route.stops.drop(tracker.reachedStops))
         progress = update.progress
         if (update.arrived) {
             say("You have arrived")
+            speak("You have arrived")
             stop()
+            return
+        }
+        // Transit routes are not rebuilt: a bus does not follow the drawn line exactly.
+        if (route.mode != TravelMode.Transit && !rerouting &&
+            offRoute.update(update.offRouteMeters, SystemClock.elapsedRealtime())
+        ) {
+            reroute(fix.point)
+            return
+        }
+        // Off the route the distances to the turns mean nothing.
+        if (update.offRouteMeters < OFF_ROUTE_M && !rerouting) {
+            prompter?.update(update.progress, route.currentVariant?.steps.orEmpty(), speed)?.let(speak)
+        }
+    }
+
+    /** I left the route: a new one from where I am, keeping the stops not reached yet. */
+    private fun reroute(here: Point) {
+        val left = route.stops.drop(tracker?.reachedStops ?: 0)
+        rerouting = true
+        speak("Recalculating the route")
+        route.reroute(Waypoint("Current location", here.latitude, here.longitude, isMyLocation = true), left) { found ->
+            rerouting = false
+            if (!active) return@reroute
+            val variant = route.currentVariant
+            if (!found || variant?.track == null) {
+                say("Could not rebuild the route")
+                return@reroute
+            }
+            tracker = NavTracker(variant)
+            offRoute.reset()
+            prompter?.reset()
+            route.to?.let { store.save(it, route.mode, route.stops.toList()) }
+            say("Route rebuilt")
+            location.fix.value?.let { me ->
+                track(me, me.speedMps)
+                if (active) follow(me.point, moveCamera = !free)
+            }
         }
     }
 
@@ -161,5 +213,7 @@ class NavigationController(
 
     private companion object {
         const val FREE_MS = 30_000L
+        /** Farther than this from the route, I'm off it (as [OffRouteDetector] counts). */
+        const val OFF_ROUTE_M = 50.0
     }
 }

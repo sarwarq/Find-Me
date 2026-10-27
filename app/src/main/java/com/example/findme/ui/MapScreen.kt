@@ -23,8 +23,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -338,6 +343,40 @@ fun MapScreen(vm: MapViewModel, authVm: AuthViewModel, meetVm: MeetViewModel, da
 
         if (vm.nav.active) {
             SpeedBadges(vm, Modifier.align(Alignment.TopEnd))
+            // Spoken guidance on/off, under the speed badges.
+            MapButton(
+                onClick = { vm.voice.toggleMuted() },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(top = 84.dp, end = 12.dp),
+                size = 48.dp,
+                shape = CircleShape,
+            ) {
+                Icon(
+                    if (vm.voice.muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                    contentDescription = if (vm.voice.muted) "Turn voice on" else "Turn voice off",
+                    tint = if (vm.voice.muted) yPalette.textSecondary else yPalette.accent,
+                )
+            }
+            if (vm.nav.rerouting) {
+                Surface(
+                    shape = CircleShape,
+                    color = yPalette.sheet,
+                    shadowElevation = 4.dp,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .statusBarsPadding()
+                        .padding(start = 12.dp, top = 10.dp),
+                ) {
+                    Text(
+                        "Recalculating route…",
+                        color = yPalette.textPrimary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    )
+                }
+            }
             NavigationPanel(vm, Modifier.align(Alignment.BottomCenter))
             if (vm.nav.free) {
                 // The map was moved: back to the arrow now (it also comes back by itself after 30 s).

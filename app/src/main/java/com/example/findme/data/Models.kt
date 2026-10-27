@@ -115,6 +115,20 @@ data class TransitStep(
     val arrivalMillis: Long? = null,
 )
 
+/** "Bus 12", "Metro M1", "Train". */
+fun rideName(step: TransitStep): String {
+    val kind = when (step.vehicle) {
+        "bus" -> "Bus"
+        "minibus" -> "Minibus"
+        "trolleybus" -> "Trolleybus"
+        "tramway", "tram" -> "Tram"
+        "underground" -> "Metro"
+        "railway", "suburban" -> "Train"
+        else -> "Ride"
+    }
+    return listOfNotNull(kind, step.lineName).joinToString(" ")
+}
+
 enum class Maneuver {
     Straight, SlightLeft, SlightRight, Left, Right, HardLeft, HardRight,
     ForkLeft, ForkRight, UturnLeft, UturnRight, Roundabout, Finish,
