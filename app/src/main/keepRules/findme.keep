@@ -1,0 +1,14 @@
+# R8 keep rules for FindMe (release builds).
+
+# Yandex MapKit: its native library calls the Java/Kotlin classes by name (JNI),
+# so they must keep their names and members.
+-keep class com.yandex.** { *; }
+-dontwarn com.yandex.**
+
+# Credential Manager finds its Google Play services provider by reflection.
+-if class androidx.credentials.CredentialManager
+-keep class androidx.credentials.playservices.** { *; }
+
+# Crash reports with real line numbers (file names are hidden).
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile

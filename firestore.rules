@@ -1,0 +1,175 @@
+rules_version = '2';
+
+// Paste into Firebase console → Firestore Database → Rules → Publish.
+//
+// users/{uid}         own profile only.
+// meetings/{id}       only members can read; the organizer edits and deletes;
+//                     anyone with the meeting id (from an invite) may add ONLY themselves.
+// invites/{code}      read one by its code (no listing); written with the meeting.
+// meetings/{id}/locations/{uid}   live positions: members read, each writes their own.
+// meetings/{id}/routes/{uid}      the route a member drives after "Go"; same access.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+
+    match /users/{uid} {
+      allow read: if signedIn() && me() == uid;
+      allow create, update: if signedIn()
+        && me() == uid
+        && request.resource.data.keys().hasOnly(['name', 'photoUrl', 'createdAt', 'updatedAt'])
+        && (!('name' in request.resource.data)
+            || (request.resource.data.name is string
+                && request.resource.data.name.size() > 0
+                && request.resource.data.name.size() <= 40));
+      allow delete: if false;
+    }
+
+    match /meetings/{meetingId} {
+      function validMeeting(d) {
+        return d.title is string && d.title.size() > 0 && d.title.size() <= 60
+          && d.placeName is string && d.placeName.size() <= 200
+          && (d.placeAddress == null || (d.placeAddress is string && d.placeAddress.size() <= 200))
+          && d.lat is number && d.lat >= -90 && d.lat <= 90
+          && d.lon is number && d.lon >= -180 && d.lon <= 180
+          && (d.time == null || d.time is timestamp);
+      }
+
+      function validInfo(info) {
+        return info.keys().hasOnly(['name', 'photoUrl', 'mode'])
+          && info.name is string && info.name.size() > 0 && info.name.size() <= 40
+          && (info.photoUrl == null || (info.photoUrl is string && info.photoUrl.size() <= 500))
+          && (!('mode' in info) || info.mode in ['car', 'transit', 'walk', 'bike']);
+      }
+
+      function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+      function infoChanged() {
+        return request.resource.data.memberInfo.diff(resource.data.memberInfo).affectedKeys();
+      }
+      function isMember() { return me() in resource.data.members; }
+
+      // Organizer edits what and where.
+      function ownerEdit() {
+        return resource.data.ownerUid == me()
+          && changed().hasOnly(['title', 'placeName', 'placeAddress', 'lat', 'lon', 'time'])
+          && validMeeting(request.resource.data);
+      }
+
+      // Someone with the invite adds only themselves (max 20 people).
+      function selfJoin() {
+        return !isMember()
+          && changed().hasOnly(['members', 'memberInfo'])
+          && request.resource.data.members.hasAll(resource.data.members)
+          && request.resource.data.members.removeAll(resource.data.members) == [me()]
+          && request.resource.data.members.size() <= 20
+          && infoChanged().hasOnly([me()])
+          && validInfo(request.resource.data.memberInfo[me()]);
+      }
+
+      // A member (not the organizer) removes only themselves.
+      function selfLeave() {
+        return isMember()
+          && resource.data.ownerUid != me()
+          && changed().hasOnly(['members', 'memberInfo'])
+          && resource.data.members.hasAll(request.resource.data.members)
+          && resource.data.members.removeAll(request.resource.data.members) == [me()]
+          && infoChanged().hasOnly([me()])
+          && !(me() in request.resource.data.memberInfo);
+      }
+
+      // A member updates their own name and photo.
+      function selfInfo() {
+        return isMember()
+          && changed().hasOnly(['memberInfo'])
+          && infoChanged().hasOnly([me()])
+          && validInfo(request.resource.data.memberInfo[me()]);
+      }
+
+      allow read: if signedIn() && isMember();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+             'title', 'placeName', 'placeAddress', 'lat', 'lon', 'time',
+             'ownerUid', 'code', 'members', 'memberInfo', 'createdAt'])
+        && request.resource.data.ownerUid == me()
+        && request.resource.data.members == [me()]
+        && request.resource.data.memberInfo.keys().hasOnly([me()])
+        && validInfo(request.resource.data.memberInfo[me()])
+        && request.resource.data.code is string
+        && request.resource.data.createdAt == request.time
+        && validMeeting(request.resource.data);
+      allow update: if signedIn() && (ownerEdit() || selfJoin() || selfLeave() || selfInfo());
+      allow delete: if signedIn() && resource.data.ownerUid == me();
+
+      // Live positions while a member shares their location.
+      // Members read all; each writes only their own; the organizer may clean up when deleting.
+      match /locations/{uid} {
+        function meeting() {
+          return get(/databases/$(database)/documents/meetings/$(meetingId)).data;
+        }
+
+        allow read: if signedIn() && me() in meeting().members;
+        allow create, update: if signedIn()
+          && me() == uid
+          && me() in meeting().members
+          && request.resource.data.keys().hasOnly(
+               ['lat', 'lon', 'accuracy', 'heading', 'speed', 'arrived',
+                'etaSeconds', 'remainingMeters', 'updatedAt'])
+          && (!('etaSeconds' in request.resource.data)
+              || request.resource.data.etaSeconds == null || request.resource.data.etaSeconds is number)
+          && (!('remainingMeters' in request.resource.data)
+              || request.resource.data.remainingMeters == null || request.resource.data.remainingMeters is number)
+          && request.resource.data.lat is number
+          && request.resource.data.lat >= -90 && request.resource.data.lat <= 90
+          && request.resource.data.lon is number
+          && request.resource.data.lon >= -180 && request.resource.data.lon <= 180
+          && (request.resource.data.accuracy == null || request.resource.data.accuracy is number)
+          && (request.resource.data.heading == null || request.resource.data.heading is number)
+          && (request.resource.data.speed == null || request.resource.data.speed is number)
+          && request.resource.data.arrived is bool
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if signedIn() && (me() == uid || meeting().ownerUid == me());
+      }
+
+      // The route a member is driving (after "Go"), drawn on the others' maps.
+      match /routes/{uid} {
+        function meeting() {
+          return get(/databases/$(database)/documents/meetings/$(meetingId)).data;
+        }
+
+        allow read: if signedIn() && me() in meeting().members;
+        allow create, update: if signedIn()
+          && me() == uid
+          && me() in meeting().members
+          && request.resource.data.keys().hasOnly(
+               ['mode', 'polyline', 'durationSeconds', 'distanceMeters', 'updatedAt'])
+          && request.resource.data.mode is string && request.resource.data.mode.size() <= 20
+          && request.resource.data.polyline is string && request.resource.data.polyline.size() <= 300000
+          && request.resource.data.durationSeconds is number
+          && request.resource.data.distanceMeters is number
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if signedIn() && (me() == uid || meeting().ownerUid == me());
+      }
+    }
+
+    match /invites/{code} {
+      allow get: if signedIn();
+      allow list: if false;
+      // Only together with the organizer's new meeting that carries the same code.
+      // Creating over an existing code counts as an update and is refused.
+      allow create: if signedIn()
+        && code.matches('^[A-HJ-NP-Z2-9]{6}$')
+        && request.resource.data.keys().hasOnly(['meetingId', 'ownerUid'])
+        && request.resource.data.ownerUid == me()
+        && getAfter(/databases/$(database)/documents/meetings/$(request.resource.data.meetingId)).data.ownerUid == me()
+        && getAfter(/databases/$(database)/documents/meetings/$(request.resource.data.meetingId)).data.code == code;
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.ownerUid == me();
+    }
+
+    // Everything else is closed.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

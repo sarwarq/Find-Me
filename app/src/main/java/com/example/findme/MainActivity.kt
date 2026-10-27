@@ -1,0 +1,108 @@
+package com.example.findme
+
+import android.graphics.Color
+import android.content.Intent
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import com.example.findme.location.LocationShareService
+import com.example.findme.update.UpdateAvailableDialog
+import com.example.findme.update.UpdateGate
+import com.example.findme.update.UpdateRequiredScreen
+import com.example.findme.update.UpdateState
+import com.example.findme.ui.MapScreen
+import com.example.findme.ui.MapViewModel
+import com.example.findme.ui.meet.MeetViewModel
+import com.example.findme.ui.profile.AuthViewModel
+import com.example.findme.ui.theme.FindMeTheme
+import com.yandex.mapkit.MapKitFactory
+
+class MainActivity : ComponentActivity() {
+
+    private val vm: MapViewModel by viewModels()
+    private val authVm: AuthViewModel by viewModels()
+    private val meetVm: MeetViewModel by viewModels()
+    private lateinit var updates: UpdateGate
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        initMapKit()
+        super.onCreate(savedInstanceState)
+        updates = UpdateGate(this)
+        // Opened by an invite link; skip it when the activity is only being recreated.
+        if (savedInstanceState == null) handleInvite(intent)
+        setContent {
+            val dark = vm.isDark(isSystemInDarkTheme())
+            DisposableEffect(dark) {
+                val style = if (dark) {
+                    SystemBarStyle.dark(Color.WHITE)
+                } else {
+                    SystemBarStyle.light(Color.WHITE, Color.WHITE)
+                }
+                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+                onDispose { }
+            }
+            FindMeTheme(darkTheme = dark) {
+                when (val update = updates.state) {
+                    is UpdateState.Required -> {
+                        // An unsupported version must not keep sending the location either.
+                        LaunchedEffect(Unit) { LocationShareService.stop(this@MainActivity) }
+                        UpdateRequiredScreen(update.message, onUpdate = updates::update)
+                    }
+                    else -> {
+                        MapScreen(vm, authVm, meetVm, darkMap = dark)
+                        if (update is UpdateState.Optional) {
+                            UpdateAvailableDialog(onUpdate = updates::update, onLater = updates::later)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        updates.onResume()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleInvite(intent)
+    }
+
+    /** `findme://join/ABC123` → the "Join a meet-up" dialog with the code filled in. */
+    private fun handleInvite(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (intent.action != Intent.ACTION_VIEW || uri.scheme != "findme" || uri.host != "join") return
+        val code = uri.lastPathSegment ?: return
+        meetVm.openJoin(code)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        MapKitFactory.getInstance().onStart()
+    }
+
+    override fun onStop() {
+        MapKitFactory.getInstance().onStop()
+        super.onStop()
+    }
+
+    private fun initMapKit() {
+        if (mapKitReady) return
+        MapKitFactory.setApiKey(MAPKIT_API_KEY)
+        MapKitFactory.setLocale("en_US")
+        MapKitFactory.initialize(this)
+        mapKitReady = true
+    }
+
+    private companion object {
+        const val MAPKIT_API_KEY = "d4790a09-6211-4912-a465-5b5dcc361628"
+        var mapKitReady = false
+    }
+}

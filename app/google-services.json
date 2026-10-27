@@ -1,0 +1,92 @@
+{
+  "project_info": {
+    "project_number": "783367521169",
+    "project_id": "findme-734c7",
+    "storage_bucket": "findme-734c7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:783367521169:android:4c8737ffb2ae8a00949030",
+        "android_client_info": {
+          "package_name": "bsb.findme.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "783367521169-39kb32mmb1ddduv0si1849k2m99vjf5c.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "bsb.findme.app",
+            "certificate_hash": "10c336da52104868f1150f824acee2d8ed71d960"
+          }
+        },
+        {
+          "client_id": "783367521169-7f3lr8nll1e32hisk5eoh77hqclm4hfa.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "bsb.findme.app",
+            "certificate_hash": "d56a130f9e7b6cb112cdb962c20af3a6a7ca29df"
+          }
+        },
+        {
+          "client_id": "783367521169-l8lpu8igbistrlaan1rhqktvkc6o9os8.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAo7grumQ4c_PZIFz2hkWEx1ebMAZKB_AI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "783367521169-l8lpu8igbistrlaan1rhqktvkc6o9os8.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:783367521169:android:d452160dec399a49949030",
+        "android_client_info": {
+          "package_name": "com.example.findme"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "783367521169-9gr5kfu39dme7bn37at56ljmvgjl6uoa.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.findme",
+            "certificate_hash": "10c336da52104868f1150f824acee2d8ed71d960"
+          }
+        },
+        {
+          "client_id": "783367521169-l8lpu8igbistrlaan1rhqktvkc6o9os8.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAo7grumQ4c_PZIFz2hkWEx1ebMAZKB_AI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "783367521169-l8lpu8igbistrlaan1rhqktvkc6o9os8.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
