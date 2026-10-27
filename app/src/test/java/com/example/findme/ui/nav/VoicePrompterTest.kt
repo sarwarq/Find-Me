@@ -2,6 +2,8 @@ package com.example.findme.ui.nav
 
 import com.example.findme.data.LegKind
 import com.example.findme.data.Maneuver
+import com.example.findme.data.RoadEventKind
+import com.example.findme.data.RouteEvent
 import com.example.findme.data.TransitStep
 import com.example.findme.data.TravelMode
 import org.junit.Assert.assertEquals
@@ -55,6 +57,13 @@ class VoicePrompterTest {
     }
 
     @Test
+    fun `roundabout - in, then out`() {
+        val p = VoicePrompter(TravelMode.Car)
+        assertEquals("Enter the roundabout", p.at(Maneuver.Roundabout, 40.0, segment = 10))
+        assertEquals("Take the exit", p.at(Maneuver.RoundaboutExit, 30.0, segment = 14))
+    }
+
+    @Test
     fun `walking - short distances`() {
         val p = VoicePrompter(TravelMode.Walk)
         assertNull(p.at(Maneuver.Left, 150.0, speed = 1.4))
@@ -90,6 +99,28 @@ class VoicePrompterTest {
         assertNull(at(0))
         assertEquals("Take bus 51 to Oybek", at(1))
         assertEquals("Walk to your destination", at(2))
+    }
+
+    @Test
+    fun `a speed camera is announced once, with its limit`() {
+        val p = VoicePrompter(TravelMode.Car)
+        val camera = RouteEvent("c1", 10, 0.0, RoadEventKind.SpeedCamera, limitKmh = 60)
+        val at = { m: Double -> p.event(progress(Maneuver.Straight, 900.0).copy(event = camera, eventInMeters = m), 10.0) }
+        assertNull(at(600.0)) // 20 s at 10 m/s is 200 m, but at least 300 m
+        assertEquals("Speed camera ahead, limit 60", at(290.0))
+        assertNull(at(100.0))
+        p.reset() // a new route: still the same camera, not said again
+        assertNull(at(90.0))
+    }
+
+    @Test
+    fun `an accident ahead`() {
+        val p = VoicePrompter(TravelMode.Car)
+        val crash = RouteEvent("a1", 10, 0.0, RoadEventKind.Accident)
+        assertEquals(
+            "Accident ahead",
+            p.event(progress(Maneuver.Straight, 900.0).copy(event = crash, eventInMeters = 200.0), 10.0),
+        )
     }
 
     @Test

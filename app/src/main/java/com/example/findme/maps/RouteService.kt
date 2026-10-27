@@ -2,13 +2,18 @@ package com.example.findme.maps
 
 import com.example.findme.data.DriveEta
 import com.example.findme.data.Geo
+import com.example.findme.data.LaneArrow
+import com.example.findme.data.LaneSignPoint
 import com.example.findme.data.LegKind
 import com.example.findme.data.Maneuver
 import com.example.findme.data.ManeuverPoint
 import com.example.findme.data.NavTrack
+import com.example.findme.data.RoadEventKind
+import com.example.findme.data.RoadLane
 import com.example.findme.data.RouteLine
 import com.example.findme.data.RouteResult
 import com.example.findme.data.RouteVariant
+import com.example.findme.data.RouteEvent
 import com.example.findme.data.TransitLeg
 import com.example.findme.data.TransitStep
 import com.example.findme.data.TravelMode
@@ -23,10 +28,13 @@ import com.yandex.mapkit.directions.driving.DrivingOptions
 import com.yandex.mapkit.directions.driving.DrivingRoute
 import com.yandex.mapkit.directions.driving.DrivingRouterType
 import com.yandex.mapkit.directions.driving.DrivingSession
+import com.yandex.mapkit.directions.driving.LaneDirection
+import com.yandex.mapkit.directions.driving.LaneKind
 import com.yandex.mapkit.directions.driving.VehicleOptions
 import com.yandex.mapkit.geometry.Point
 import com.yandex.mapkit.geometry.SubpolylineHelper
 import com.yandex.mapkit.navigation.JamType
+import com.yandex.mapkit.road_events.EventTag
 import com.yandex.mapkit.transport.TransportFactory
 import com.yandex.mapkit.transport.masstransit.FilterVehicleTypes
 import com.yandex.mapkit.transport.masstransit.FitnessOptions
@@ -37,6 +45,7 @@ import com.yandex.mapkit.transport.masstransit.TimeOptions
 import com.yandex.mapkit.transport.masstransit.TransitOptions
 import com.yandex.runtime.Error
 import kotlin.math.max
+import kotlin.math.roundToInt
 
 /** Builds routes for every travel mode with MapKit routers. */
 class RouteService {
@@ -214,6 +223,8 @@ class RouteService {
             track = NavTrack(
                 points, route.speedLimits.map { it }, maneuvers, segmentColors,
                 segmentSpeeds = route.jamSegments.map { it.speed },
+                laneSigns = laneSigns(route),
+                events = routeEvents(route),
             ),
         )
     }
@@ -326,6 +337,66 @@ class RouteService {
         else -> COLOR_TRANSIT
     }
 
+    /** Lane signs that show which lane to take (the others say nothing for guidance). */
+    private fun laneSigns(route: DrivingRoute): List<LaneSignPoint> = route.laneSigns.mapNotNull { sign ->
+        val lanes = sign.lanes.map { lane ->
+            RoadLane(
+                arrows = lane.directions.mapNotNull { it.toArrow() }.distinct(),
+                take = lane.highlightedDirection?.toArrow(),
+                special = lane.laneKind != LaneKind.PLAIN_LANE && lane.laneKind != LaneKind.UNKNOWN_KIND,
+            )
+        }
+        if (lanes.none { it.take != null }) return@mapNotNull null
+        LaneSignPoint(sign.position.segmentIndex, sign.position.segmentPosition, lanes)
+    }
+
+    private fun LaneDirection.toArrow(): LaneArrow? = when (this) {
+        LaneDirection.LEFT180 -> LaneArrow.UturnLeft
+        LaneDirection.LEFT135 -> LaneArrow.SharpLeft
+        LaneDirection.LEFT90, LaneDirection.LEFT_FROM_RIGHT -> LaneArrow.Left
+        LaneDirection.LEFT45, LaneDirection.LEFT_SHIFT -> LaneArrow.SlightLeft
+        LaneDirection.STRAIGHT_AHEAD -> LaneArrow.Straight
+        LaneDirection.RIGHT45, LaneDirection.RIGHT_SHIFT -> LaneArrow.SlightRight
+        LaneDirection.RIGHT90, LaneDirection.RIGHT_FROM_LEFT -> LaneArrow.Right
+        LaneDirection.RIGHT135 -> LaneArrow.SharpRight
+        LaneDirection.RIGHT180 -> LaneArrow.UturnRight
+        LaneDirection.UNKNOWN_DIRECTION -> null
+    }
+
+    /** Cameras, accidents, works on the route; chats and other notes are left out. */
+    private fun routeEvents(route: DrivingRoute): List<RouteEvent> = route.events.mapNotNull { e ->
+        val kind = eventKind(e.tags) ?: return@mapNotNull null
+        val pos = e.polylinePosition
+        RouteEvent(
+            id = e.eventId,
+            segment = pos.segmentIndex,
+            t = pos.segmentPosition,
+            kind = kind,
+            // MapKit gives m/s. Only a speed camera's limit means anything to the driver.
+            limitKmh = e.speedLimit
+                ?.takeIf { kind == RoadEventKind.SpeedCamera }
+                ?.let { (it * 3.6f).roundToInt() }
+                ?.takeIf { it > 0 },
+        )
+    }.sortedBy { it.segment + it.t }
+
+    private fun eventKind(tags: List<EventTag>): RoadEventKind? = when {
+        EventTag.SPEED_CONTROL in tags -> RoadEventKind.SpeedCamera
+        EventTag.LANE_CONTROL in tags || EventTag.ROAD_MARKING_CONTROL in tags -> RoadEventKind.LaneCamera
+        // No-stopping cameras are left out: every few hundred meters in a city, noise for a driver.
+        EventTag.CROSS_ROAD_CONTROL in tags || EventTag.MOBILE_CONTROL in tags ||
+            EventTag.TRAFFIC_CONTROL in tags -> RoadEventKind.Camera
+        EventTag.NO_STOPPING_CONTROL in tags -> null
+        EventTag.POLICE in tags || EventTag.POLICE_PATROL in tags -> RoadEventKind.Police
+        EventTag.ACCIDENT in tags -> RoadEventKind.Accident
+        EventTag.RECONSTRUCTION in tags -> RoadEventKind.Works
+        EventTag.CLOSED in tags || EventTag.DRAWBRIDGE in tags -> RoadEventKind.Closed
+        EventTag.SCHOOL in tags -> RoadEventKind.School
+        EventTag.DANGER in tags || EventTag.OVERTAKING_DANGER in tags ||
+            EventTag.PEDESTRIAN_DANGER in tags || EventTag.CROSS_ROAD_DANGER in tags -> RoadEventKind.Danger
+        else -> null
+    }
+
     private fun Action.toManeuver(): Maneuver = when (this) {
         Action.SLIGHT_LEFT, Action.EXIT_LEFT -> Maneuver.SlightLeft
         Action.SLIGHT_RIGHT, Action.EXIT_RIGHT -> Maneuver.SlightRight
@@ -337,7 +408,9 @@ class RouteService {
         Action.FORK_RIGHT -> Maneuver.ForkRight
         Action.UTURN_LEFT -> Maneuver.UturnLeft
         Action.UTURN_RIGHT -> Maneuver.UturnRight
-        Action.ENTER_ROUNDABOUT, Action.LEAVE_ROUNDABOUT -> Maneuver.Roundabout
+        Action.ENTER_ROUNDABOUT -> Maneuver.Roundabout
+        // Leaving used to be said as "enter the roundabout" too.
+        Action.LEAVE_ROUNDABOUT -> Maneuver.RoundaboutExit
         Action.FINISH -> Maneuver.Finish
         else -> Maneuver.Straight
     }

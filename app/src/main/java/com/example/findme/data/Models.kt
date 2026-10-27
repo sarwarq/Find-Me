@@ -131,11 +131,33 @@ fun rideName(step: TransitStep): String {
 
 enum class Maneuver {
     Straight, SlightLeft, SlightRight, Left, Right, HardLeft, HardRight,
-    ForkLeft, ForkRight, UturnLeft, UturnRight, Roundabout, Finish,
+    ForkLeft, ForkRight, UturnLeft, UturnRight, Roundabout, RoundaboutExit, Finish,
 }
 
 /** A maneuver that starts at polyline segment [segment]. */
 data class ManeuverPoint(val segment: Int, val maneuver: Maneuver)
+
+/** One arrow painted on a lane. */
+enum class LaneArrow { UturnLeft, SharpLeft, Left, SlightLeft, Straight, SlightRight, Right, SharpRight, UturnRight }
+
+/** A lane: its arrows, which of them the route takes (null: not this lane), and if it's for buses etc. */
+data class RoadLane(val arrows: List<LaneArrow>, val take: LaneArrow?, val special: Boolean = false)
+
+/** The lanes of the road at [segment] (and [t] 0..1 along it), left to right. */
+data class LaneSignPoint(val segment: Int, val t: Double, val lanes: List<RoadLane>)
+
+/** What a road event on the route is. */
+enum class RoadEventKind { SpeedCamera, LaneCamera, Camera, Police, Accident, Works, Closed, Danger, School }
+
+/** A camera, accident, road works... on the route at [segment] / [t]. */
+data class RouteEvent(
+    val id: String,
+    val segment: Int,
+    val t: Double,
+    val kind: RoadEventKind,
+    /** A camera's speed limit, km/h. */
+    val limitKmh: Int? = null,
+)
 
 /** Route geometry prepared for guidance: progress, speed limits and the next maneuver. */
 class NavTrack(
@@ -147,7 +169,18 @@ class NavTrack(
     val segmentColors: List<Int>?,
     /** Traffic speed in m/s per segment (0 = unknown), or null when the route has none. */
     segmentSpeeds: List<Double>? = null,
+    /** Lane signs along the route, in order (car routes only). */
+    val laneSigns: List<LaneSignPoint> = emptyList(),
+    /** Cameras, accidents, works on the route, in order (car routes only). */
+    val events: List<RouteEvent> = emptyList(),
 ) {
+    /** Distance from the start to a point given as a segment and a share of it. */
+    fun alongAt(segment: Int, t: Double): Double {
+        if (cumulative.size < 2) return 0.0
+        val i = segment.coerceIn(0, cumulative.size - 2)
+        return cumulative[i] + (cumulative[i + 1] - cumulative[i]) * t.coerceIn(0.0, 1.0)
+    }
+
     /** Distance from the start to every point, in meters. */
     val cumulative: DoubleArray = DoubleArray(points.size).also { acc ->
         for (i in 1 until points.size) acc[i] = acc[i - 1] + Geo.distanceMeters(points[i - 1], points[i])

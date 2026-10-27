@@ -98,6 +98,7 @@ class MapViewModel(
         route, navStore, location, viewModelScope, commands,
         say = { message = it },
         speak = voice::speak,
+        beep = voice::beep,
     )
 
     // ---------- Navigation between screens ----------

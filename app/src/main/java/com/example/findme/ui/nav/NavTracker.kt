@@ -4,6 +4,8 @@ import com.example.findme.data.Geo
 import com.example.findme.data.LegKind
 import com.example.findme.data.Maneuver
 import com.example.findme.data.NavTrack
+import com.example.findme.data.RoadLane
+import com.example.findme.data.RouteEvent
 import com.example.findme.data.RouteVariant
 import com.example.findme.data.TransitStep
 import com.yandex.mapkit.geometry.Point
@@ -29,6 +31,11 @@ data class NavProgress(
     /** Where I am on the route's track: segment index and how far along it (0..1). */
     val trackSegment: Int = 0,
     val trackT: Double = 0.0,
+    /** Lanes to show: the lane sign just ahead, or null. */
+    val lanes: List<RoadLane>? = null,
+    /** The next camera, accident... ahead, and how far. */
+    val event: RouteEvent? = null,
+    val eventInMeters: Double = 0.0,
 )
 
 /** What one position fix changed in guidance. */
@@ -52,6 +59,10 @@ class NavUpdate(
  * which stops I have passed. Plain math, no Android, so it can be unit-tested.
  */
 class NavTracker(private val variant: RouteVariant) {
+
+    // Where each lane sign and road event is, in meters from the start.
+    private val laneAlong = variant.track?.let { t -> t.laneSigns.map { t.alongAt(it.segment, it.t) } }.orEmpty()
+    private val eventAlong = variant.track?.let { t -> t.events.map { t.alongAt(it.segment, it.t) } }.orEmpty()
 
     private var segment = 0
     /** Stops already passed. */
@@ -107,6 +118,7 @@ class NavTracker(private val variant: RouteVariant) {
 
         // Share of the time already driven: a jam ahead counts for more than an empty road.
         val done = track.timeShare(along)
+        val eventIndex = eventAlong.indices.firstOrNull { eventAlong[it] - along in -EVENT_BEHIND_M..EVENT_AHEAD_M }
         val progress = NavProgress(
             nextStop = nextStop,
             toStopMeters = toStop,
@@ -123,6 +135,10 @@ class NavTracker(private val variant: RouteVariant) {
             nextSegment = next?.segment ?: -1,
             trackSegment = best,
             trackT = bestT,
+            lanes = laneAlong.indices.firstOrNull { laneAlong[it] - along in -LANES_BEHIND_M..LANES_AHEAD_M }
+                ?.let { track.laneSigns[it].lanes },
+            event = eventIndex?.let { track.events[it] },
+            eventInMeters = eventIndex?.let { (eventAlong[it] - along).coerceAtLeast(0.0) } ?: 0.0,
         )
         return NavUpdate(
             progress, routeHeading, reached,
@@ -163,5 +179,11 @@ class NavTracker(private val variant: RouteVariant) {
         const val ON_ROUTE_M = 40.0
         /** How far ahead on the route to aim the map, so it turns smoothly into bends. */
         const val HEADING_LOOKAHEAD_M = 25.0
+        // Lanes show from this far before their sign until just past it.
+        const val LANES_AHEAD_M = 300.0
+        const val LANES_BEHIND_M = 10.0
+        // A camera or accident shows from this far ahead until just past it.
+        const val EVENT_AHEAD_M = 800.0
+        const val EVENT_BEHIND_M = 10.0
     }
 }

@@ -2,10 +2,15 @@ package com.example.findme.ui.nav
 
 import com.example.findme.TestGeo.lineNorth
 import com.example.findme.TestGeo.pt
+import com.example.findme.data.LaneArrow
+import com.example.findme.data.LaneSignPoint
 import com.example.findme.data.LegKind
 import com.example.findme.data.Maneuver
 import com.example.findme.data.ManeuverPoint
 import com.example.findme.data.NavTrack
+import com.example.findme.data.RoadEventKind
+import com.example.findme.data.RoadLane
+import com.example.findme.data.RouteEvent
 import com.example.findme.data.RouteVariant
 import com.example.findme.data.TransitStep
 import com.yandex.mapkit.geometry.Point
@@ -68,6 +73,27 @@ class NavTrackerTest {
         val speeds = List(10) { if (it == 3) 0.0 else 10.0 }
         val v = variant(road, seconds = 600.0).copy(track = NavTrack(road, emptyList(), emptyList(), null, speeds))
         assertEquals(300.0, NavTracker(v).at(0.0, 500.0).progress.remainingSeconds, 3.0)
+    }
+
+    @Test
+    fun `lanes show from 300 m before their sign, the next camera from 800 m`() {
+        val road = lineNorth(2000.0)
+        val lanes = listOf(RoadLane(listOf(LaneArrow.Left), null), RoadLane(listOf(LaneArrow.Straight), LaneArrow.Straight))
+        val camera = RouteEvent("c", 15, 0.5, RoadEventKind.SpeedCamera, 60) // 1550 m
+        val track = NavTrack(
+            road, emptyList(), emptyList(), null,
+            laneSigns = listOf(LaneSignPoint(10, 0.0, lanes)), // 1000 m
+            events = listOf(camera),
+        )
+        val t = NavTracker(variant(road).copy(track = track))
+        val far = t.at(0.0, 600.0).progress
+        assertNull(far.lanes)
+        assertNull(far.event)
+        val near = t.at(0.0, 800.0).progress
+        assertEquals(lanes, near.lanes)
+        assertEquals(camera, near.event)
+        assertEquals(750.0, near.eventInMeters, 1.0)
+        assertNull(t.at(0.0, 1100.0).progress.lanes) // passed
     }
 
     @Test

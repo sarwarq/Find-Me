@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.media.ToneGenerator
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import androidx.compose.runtime.getValue
@@ -58,6 +59,15 @@ class Voice(context: Context) {
         }
         audio.requestAudioFocus(focus)
         engine.speak(text, TextToSpeech.QUEUE_ADD, null, "nav-${nextId++}")
+    }
+
+    private var tones: ToneGenerator? = null
+
+    /** A short double beep: speeding. Silent when the voice is off. */
+    fun beep() {
+        if (muted) return
+        val gen = tones ?: runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 90) }.getOrNull()?.also { tones = it }
+        gen?.startTone(ToneGenerator.TONE_PROP_BEEP2, 400)
     }
 
     private fun start(): TextToSpeech {

@@ -17,7 +17,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -85,7 +87,9 @@ import com.example.findme.ui.meet.MeetingSheet
 import com.example.findme.ui.meet.inviteText
 import com.example.findme.ui.profile.AuthViewModel
 import com.example.findme.ui.profile.ProfileSheet
+import com.example.findme.ui.screens.EventChip
 import com.example.findme.ui.screens.HomeSheetContent
+import com.example.findme.ui.screens.LaneStrip
 import com.example.findme.ui.screens.LayersSheet
 import com.example.findme.ui.screens.NavigationPanel
 import com.example.findme.ui.screens.PlaceActions
@@ -359,23 +363,27 @@ fun MapScreen(vm: MapViewModel, authVm: AuthViewModel, meetVm: MeetViewModel, da
                     tint = if (vm.voice.muted) yPalette.textSecondary else yPalette.accent,
                 )
             }
-            if (vm.nav.rerouting) {
-                Surface(
-                    shape = CircleShape,
-                    color = yPalette.sheet,
-                    shadowElevation = 4.dp,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .statusBarsPadding()
-                        .padding(start = 12.dp, top = 10.dp),
-                ) {
-                    Text(
-                        "Recalculating route…",
-                        color = yPalette.textPrimary,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                    )
+            // Top left, clear of the speed badges: a new route on its way, lanes, the next camera.
+            Column(
+                Modifier
+                    .align(Alignment.TopStart)
+                    .statusBarsPadding()
+                    .padding(start = 12.dp, top = 10.dp, end = 164.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (vm.nav.rerouting) {
+                    Surface(shape = CircleShape, color = yPalette.sheet, shadowElevation = 4.dp) {
+                        Text(
+                            "Recalculating route…",
+                            color = yPalette.textPrimary,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        )
+                    }
                 }
+                val progress = vm.nav.progress
+                progress?.lanes?.let { LaneStrip(it) }
+                progress?.event?.let { EventChip(it, progress.eventInMeters) }
             }
             NavigationPanel(vm, Modifier.align(Alignment.BottomCenter))
             if (vm.nav.free) {

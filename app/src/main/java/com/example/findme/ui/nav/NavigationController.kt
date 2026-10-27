@@ -30,6 +30,8 @@ class NavigationController(
     private val say: (String) -> Unit,
     /** Spoken guidance: turns, stops, arrival, a new route. */
     private val speak: (String) -> Unit,
+    /** A beep: speeding. */
+    private val beep: () -> Unit = {},
 ) {
     var active by mutableStateOf(false); private set
     var progress by mutableStateOf<NavProgress?>(null); private set
@@ -40,6 +42,7 @@ class NavigationController(
 
     private var tracker: NavTracker? = null
     private val offRoute = OffRouteDetector()
+    private val overspeed = OverspeedAlarm()
     private var prompter: VoicePrompter? = null
     /** Where I'm going: along the road on the route, else from GPS / movement. */
     private var heading: Float? = null
@@ -169,6 +172,7 @@ class NavigationController(
             stop()
             return
         }
+        if (overspeed.update(update.progress.speedKmh, update.progress.limitKmh, SystemClock.elapsedRealtime())) beep()
         // Transit routes are not rebuilt: a bus does not follow the drawn line exactly.
         if (route.mode != TravelMode.Transit && !rerouting &&
             offRoute.update(update.offRouteMeters, SystemClock.elapsedRealtime())
@@ -179,6 +183,7 @@ class NavigationController(
         // Off the route the distances to the turns mean nothing.
         if (update.offRouteMeters < OFF_ROUTE_M && !rerouting) {
             prompter?.update(update.progress, route.currentVariant?.steps.orEmpty(), speed)?.let(speak)
+            prompter?.event(update.progress, speed)?.let(speak)
         }
     }
 

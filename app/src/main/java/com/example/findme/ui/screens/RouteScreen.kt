@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -30,7 +31,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.CarCrash
+import androidx.compose.material.icons.filled.Construction
+import androidx.compose.material.icons.filled.LocalPolice
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
@@ -60,6 +70,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -67,6 +78,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.findme.R
 import com.example.findme.data.Geo
+import com.example.findme.data.LaneArrow
+import com.example.findme.data.RoadEventKind
+import com.example.findme.data.RoadLane
+import com.example.findme.data.RouteEvent
+import com.example.findme.ui.nav.VoicePrompter
 import com.example.findme.data.LegKind
 import com.example.findme.data.Maneuver
 import com.example.findme.data.NavTrack
@@ -656,8 +672,78 @@ private fun Maneuver.iconRes(): Int = when (this) {
     Maneuver.Right, Maneuver.HardRight -> R.drawable.ms_turn_right
     Maneuver.UturnLeft -> R.drawable.ms_u_turn_left
     Maneuver.UturnRight -> R.drawable.ms_u_turn_right
-    Maneuver.Roundabout -> R.drawable.ms_roundabout_right
+    Maneuver.Roundabout, Maneuver.RoundaboutExit -> R.drawable.ms_roundabout_right
     Maneuver.Finish -> R.drawable.ms_sports_score
+}
+
+@DrawableRes
+private fun LaneArrow.iconRes(): Int = when (this) {
+    LaneArrow.UturnLeft -> R.drawable.ms_u_turn_left
+    LaneArrow.SharpLeft, LaneArrow.Left -> R.drawable.ms_turn_left
+    LaneArrow.SlightLeft -> R.drawable.ms_turn_slight_left
+    LaneArrow.Straight -> R.drawable.ms_straight
+    LaneArrow.SlightRight -> R.drawable.ms_turn_slight_right
+    LaneArrow.Right, LaneArrow.SharpRight -> R.drawable.ms_turn_right
+    LaneArrow.UturnRight -> R.drawable.ms_u_turn_right
+}
+
+/** The lanes ahead, left to right: the arrow to follow in blue, the rest grey. */
+@Composable
+fun LaneStrip(lanes: List<RoadLane>, modifier: Modifier = Modifier) {
+    BoxWithConstraints(modifier) {
+        // Many lanes get smaller, so the strip still fits next to the speed badges.
+        val size = ((maxWidth - 12.dp) / lanes.size - 3.dp).coerceIn(18.dp, 32.dp)
+        Surface(shape = RoundedCornerShape(14.dp), color = yPalette.sheet, shadowElevation = 4.dp) {
+            Row(Modifier.padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                lanes.forEachIndexed { i, lane ->
+                    if (i > 0) Box(Modifier.padding(horizontal = 1.dp).width(1.dp).height(size).background(yPalette.divider))
+                    Box(Modifier.size(size), contentAlignment = Alignment.Center) {
+                        lane.arrows.filter { it != lane.take }.forEach {
+                            YIcon(it.iconRes(), null, tint = yPalette.iconSecondary.copy(alpha = 0.45f), size = size)
+                        }
+                        lane.take?.let { YIcon(it.iconRes(), "Take this lane", tint = yPalette.accent, size = size) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun RoadEventKind.icon(): ImageVector = when (this) {
+    RoadEventKind.SpeedCamera, RoadEventKind.LaneCamera, RoadEventKind.Camera -> Icons.Filled.PhotoCamera
+    RoadEventKind.Police -> Icons.Filled.LocalPolice
+    RoadEventKind.Accident -> Icons.Filled.CarCrash
+    RoadEventKind.Works -> Icons.Filled.Construction
+    RoadEventKind.Closed -> Icons.Filled.Block
+    RoadEventKind.Danger -> Icons.Filled.Warning
+    RoadEventKind.School -> Icons.Filled.School
+}
+
+/** The next camera, accident or works ahead: what, its speed limit, how far. */
+@Composable
+fun EventChip(event: RouteEvent, meters: Double, modifier: Modifier = Modifier) {
+    val alarm = event.kind in setOf(RoadEventKind.Accident, RoadEventKind.Closed, RoadEventKind.Danger, RoadEventKind.Works)
+    Surface(shape = RoundedCornerShape(14.dp), color = yPalette.sheet, shadowElevation = 4.dp, modifier = modifier) {
+        Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                event.kind.icon(),
+                contentDescription = VoicePrompter.eventText(event.kind),
+                tint = if (alarm) YColors.Red else yPalette.textPrimary,
+                modifier = Modifier.size(22.dp),
+            )
+            event.limitKmh?.let { limit ->
+                Spacer(Modifier.width(6.dp))
+                Box(
+                    Modifier.size(28.dp).background(Color.White, CircleShape).border(3.dp, Color(0xFFE24742), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(limit.toString(), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF21201F))
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(Geo.shortDistance(meters), color = yPalette.textPrimary, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
 }
 
 /** Current speed and the speed limit, top right in guidance mode. */
