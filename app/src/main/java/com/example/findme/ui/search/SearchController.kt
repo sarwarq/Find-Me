@@ -20,6 +20,7 @@ import com.yandex.mapkit.search.SuggestItem
 class SearchController(
     private val places: PlaceSearchService,
     private val store: SavedPlacesStore,
+    private val location: LocationRepository,
     /** Where to look: the visible map, or around me. */
     private val searchBox: () -> BoundingBox,
 ) {
@@ -38,7 +39,7 @@ class SearchController(
 
     var history by mutableStateOf(store.history()); private set
 
-    private val me get() = LocationRepository.fix.value?.point
+    private val me get() = location.fix.value?.point
 
     fun open(prefill: String = "", slot: WaypointSlot? = null) {
         pickSlot = slot

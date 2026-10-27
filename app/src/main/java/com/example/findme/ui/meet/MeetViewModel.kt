@@ -41,9 +41,12 @@ sealed interface MeetEditor {
 }
 
 /** Meet-ups: the user's meetings, create / join / leave, live map, shared routes. */
-class MeetViewModel(app: Application) : AndroidViewModel(app) {
-
-    private val repo = MeetingRepository(app)
+class MeetViewModel(
+    app: Application,
+    private val repo: MeetingRepository,
+    private val navStore: NavStore,
+    private val location: LocationRepository,
+) : AndroidViewModel(app) {
 
     var user by mutableStateOf<UserProfile?>(null); private set
     var meetings by mutableStateOf(emptyList<Meeting>()); private set
@@ -108,14 +111,13 @@ class MeetViewModel(app: Application) : AndroidViewModel(app) {
     private var publishedPoints: List<Point>? = null
     /** Last navigation from the map; applied again once sign-in and my meetings have loaded. */
     private var lastNav: MyNav? = null
-    private val navStore = NavStore(app)
 
     private val geoms = HashMap<String, RouteGeom>()
     private val joins = HashMap<Pair<RouteGeom, RouteGeom>, Double?>()
 
     init {
         viewModelScope.launch {
-            LocationRepository.fix.filterNotNull().collect { onMyLocation(it.point) }
+            location.fix.filterNotNull().collect { onMyLocation(it.point) }
         }
         viewModelScope.launch {
             LocationShareService.state.collect { s ->

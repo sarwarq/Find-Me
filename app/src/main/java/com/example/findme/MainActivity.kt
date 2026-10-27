@@ -25,13 +25,12 @@ import com.yandex.mapkit.MapKitFactory
 
 class MainActivity : ComponentActivity() {
 
-    private val vm: MapViewModel by viewModels()
-    private val authVm: AuthViewModel by viewModels()
-    private val meetVm: MeetViewModel by viewModels()
+    private val vm: MapViewModel by viewModels { container.viewModelFactory }
+    private val authVm: AuthViewModel by viewModels { container.viewModelFactory }
+    private val meetVm: MeetViewModel by viewModels { container.viewModelFactory }
     private lateinit var updates: UpdateGate
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        initMapKit()
         super.onCreate(savedInstanceState)
         updates = UpdateGate(this)
         // Opened by an invite link; skip it when the activity is only being recreated.
@@ -91,18 +90,5 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         MapKitFactory.getInstance().onStop()
         super.onStop()
-    }
-
-    private fun initMapKit() {
-        if (mapKitReady) return
-        MapKitFactory.setApiKey(MAPKIT_API_KEY)
-        MapKitFactory.setLocale("en_US")
-        MapKitFactory.initialize(this)
-        mapKitReady = true
-    }
-
-    private companion object {
-        const val MAPKIT_API_KEY = "d4790a09-6211-4912-a465-5b5dcc361628"
-        var mapKitReady = false
     }
 }

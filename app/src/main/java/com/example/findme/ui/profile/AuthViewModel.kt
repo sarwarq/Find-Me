@@ -1,11 +1,10 @@
 package com.example.findme.ui.profile
 
-import android.app.Application
 import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.findme.data.auth.AuthRepository
 import com.example.findme.data.auth.SignInResult
@@ -13,9 +12,7 @@ import com.example.findme.data.auth.UserProfile
 import kotlinx.coroutines.launch
 
 /** Sign-in state for the profile button and the profile sheet. */
-class AuthViewModel(app: Application) : AndroidViewModel(app) {
-
-    private val repo = AuthRepository(app)
+class AuthViewModel(private val repo: AuthRepository) : ViewModel() {
 
     /** False until `google-services.json` is added to the project. */
     val available: Boolean get() = repo.available

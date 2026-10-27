@@ -19,6 +19,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.example.findme.MainActivity
 import com.example.findme.R
+import com.example.findme.container
 import com.example.findme.data.meet.MeetingRepository
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
@@ -65,7 +66,7 @@ class LocationShareService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        repo = MeetingRepository(this)
+        repo = container.meetings
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

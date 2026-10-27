@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 class NavigationController(
     private val route: RouteController,
     private val store: NavStore,
+    private val location: LocationRepository,
     private val scope: CoroutineScope,
     private val commands: MutableSharedFlow<MapCommand>,
     private val say: (String) -> Unit,
@@ -63,7 +64,7 @@ class NavigationController(
     }
 
     fun start() {
-        val me = LocationRepository.fix.value
+        val me = location.fix.value
         if (route.from?.isMyLocation != true || me == null) {
             say("Navigation starts from your location")
             return
@@ -125,7 +126,7 @@ class NavigationController(
         freeJob?.cancel()
         freeJob = null
         free = false
-        val me = LocationRepository.fix.value?.point ?: return
+        val me = location.fix.value?.point ?: return
         if (active) follow(me)
     }
 

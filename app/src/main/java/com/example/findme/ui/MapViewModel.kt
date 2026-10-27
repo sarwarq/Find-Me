@@ -1,12 +1,11 @@
 package com.example.findme.ui
 
-import android.app.Application
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.findme.data.DriveEta
 import com.example.findme.data.Geo
@@ -66,22 +65,24 @@ sealed interface MapCommand {
  * Search, route planning and guidance live in [search], [route] and [nav];
  * this class connects them (a search result opens a card, a card opens a route...).
  */
-class MapViewModel(app: Application) : AndroidViewModel(app) {
-
-    private val store = SavedPlacesStore(app)
-    private val places = PlaceSearchService()
-    private val routeService = RouteService()
+class MapViewModel(
+    private val store: SavedPlacesStore,
+    navStore: NavStore,
+    private val places: PlaceSearchService,
+    private val routeService: RouteService,
+    private val location: LocationRepository,
+) : ViewModel() {
 
     val commands = MutableSharedFlow<MapCommand>(extraBufferCapacity = 16)
     var message by mutableStateOf<String?>(null)
 
-    val search = SearchController(places, store, searchBox = ::searchBox)
+    val search = SearchController(places, store, location, searchBox = ::searchBox)
     val route = RouteController(
         routeService, commands,
         say = { message = it },
         openSearch = { slot -> search.open(slot = slot) },
     )
-    val nav = NavigationController(route, NavStore(app), viewModelScope, commands, say = { message = it })
+    val nav = NavigationController(route, navStore, location, viewModelScope, commands, say = { message = it })
 
     // ---------- Navigation between screens ----------
 
@@ -130,7 +131,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         route.onLoaded = { result -> if (!nav.onRouteLoaded(result)) route.fit() }
-        viewModelScope.launch { LocationRepository.fix.filterNotNull().collect(::onFix) }
+        viewModelScope.launch { location.fix.filterNotNull().collect(::onFix) }
     }
 
     // =====================================================================
@@ -487,7 +488,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
 
     fun onPermissionResult(granted: Boolean) {
         hasLocationPermission = granted
-        if (granted) LocationRepository.start()
+        if (granted) location.start()
     }
 
     private fun onFix(fix: LocationFix) {
@@ -547,7 +548,7 @@ class MapViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
-        LocationRepository.stop()
+        location.stop()
         routeService.cancelAll()
         routeService.cancelEtas()
         places.cancelAll()
