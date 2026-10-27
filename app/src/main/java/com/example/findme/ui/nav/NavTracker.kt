@@ -37,6 +37,10 @@ class NavUpdate(
     /** Indexes of the stops reached with this fix, in order. */
     val reachedStops: List<Int>,
     val arrived: Boolean,
+    /** Distance from the route start to where I am on it, in meters. */
+    val alongMeters: Double = 0.0,
+    /** Close enough to the route to count as on it. */
+    val onRoute: Boolean = false,
 )
 
 /**
@@ -113,7 +117,12 @@ class NavTracker(private val variant: RouteVariant) {
             trackSegment = best,
             trackT = bestT,
         )
-        return NavUpdate(progress, routeHeading, reached, arrived = remaining < ARRIVED_M)
+        return NavUpdate(
+            progress, routeHeading, reached,
+            arrived = remaining < ARRIVED_M,
+            alongMeters = along,
+            onRoute = bestDist < ON_ROUTE_M,
+        )
     }
 
     /**

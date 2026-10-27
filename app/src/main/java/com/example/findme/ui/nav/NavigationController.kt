@@ -35,6 +35,9 @@ class NavigationController(
     private var tracker: NavTracker? = null
     /** Where I'm going: along the road on the route, else from GPS / movement. */
     private var heading: Float? = null
+    /** Where I am along the route (null off it) and how fast, for the gliding arrow. */
+    private var along: Double? = null
+    private var speed: Double? = null
     private var freeJob: Job? = null
     private var lastGestureAt = 0L
 
@@ -136,6 +139,8 @@ class NavigationController(
         val tracker = tracker ?: return
         val update = tracker.update(fix.point, speed, System.currentTimeMillis())
         heading = update?.routeHeading ?: fix.heading ?: heading
+        along = update?.takeIf { it.onRoute }?.alongMeters
+        this.speed = speed
         if (update == null) return
         update.reachedStops.forEach { i ->
             say("Stop ${i + 1} reached: ${route.stops.getOrNull(i)?.name.orEmpty()}")
@@ -149,7 +154,7 @@ class NavigationController(
     }
 
     private fun follow(point: Point, moveCamera: Boolean = true) {
-        commands.tryEmit(MapCommand.Follow(point, heading, moveCamera))
+        commands.tryEmit(MapCommand.Follow(point, heading, moveCamera, along, speed))
     }
 
     private companion object {

@@ -9,12 +9,14 @@ import android.view.animation.LinearInterpolator
 import com.example.findme.R
 import com.example.findme.data.Geo
 import com.example.findme.data.MapLayerType
+import com.example.findme.data.NavTrack
 import com.example.findme.data.Place
 import com.example.findme.data.RouteLine
 import com.example.findme.data.RouteVariant
 import com.example.findme.data.TrafficInfo
 import com.example.findme.data.Waypoint
 import com.example.findme.ui.MapCommand
+import com.example.findme.ui.nav.ArrowMotion
 import com.example.findme.ui.MapViewModel
 import com.yandex.mapkit.Animation
 import com.yandex.mapkit.MapKitFactory
@@ -56,6 +58,7 @@ import com.yandex.mapkit.user_location.UserLocationView
 import com.yandex.runtime.image.ImageProvider
 import java.lang.ref.WeakReference
 import kotlin.math.abs
+import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
 
@@ -348,6 +351,11 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
         routeLayer.clear()
         balloonLayer.clear()
         mainLines.clear()
+        val track = variants.getOrNull(selected)?.track
+        if (track !== mainTrack) {
+            mainTrack = track
+            motion = null
+        }
         if (!visible) return
         // Alternatives only while choosing; in guidance they looked like the road already driven.
         if (!transit && !navMode) {
@@ -671,77 +679,109 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
     // ---------------------------------------------------------------------
 
     /**
-     * In guidance the arrow is our own placemark, not MapKit's user icon: MapKit jumps its icon
-     * to each new fix while the camera glides after it, so the arrow twitched once a second.
-     * Here the arrow and the camera move together, frame by frame, over the time between fixes.
+     * In guidance the arrow is our own placemark, not MapKit's user icon (MapKit jumps its icon
+     * to each fix). Every frame [ArrowMotion] says where the arrow is by now, from the speed and
+     * the road; the camera stays on it, its turn, zoom and tilt eased so nothing snaps.
      */
     private val navLayer = map.mapObjects.addCollection()
     private var navArrow: PlacemarkMapObject? = null
-    private var arrowAt: Point? = null
-    private var arrowDir = 0f
-    private var followAnim: ValueAnimator? = null
-    private var lastFollowAt = 0L
-    /** The user moved the map: the running glide stops moving the camera. */
+    private var motion: ArrowMotion? = null
+    /** Track of the selected route variant, set by [renderRoute]. */
+    private var mainTrack: NavTrack? = null
+    private var frameLoop: ValueAnimator? = null
+    private var lastFrameMs = 0L
+    private var lastPassedMs = 0L
+    /** The user moved the map: the camera stays where they put it, the arrow goes on. */
     private var cameraFree = false
+    // The camera, eased towards the arrow; [blendFrom] is where it was when following (re)started.
+    private var camAzimuth = 0f
+    private var camZoom = 0f
+    private var camTilt = 0f
+    private var blendFrom: Point? = null
+    private var blendStartMs = 0L
 
     private fun follow(cmd: MapCommand.Follow) {
         applyFocus()
         val now = SystemClock.uptimeMillis()
-        // Glide for as long as the fixes take to come, so the arrow never stops between them.
-        val ms = if (lastFollowAt == 0L) 800L else (now - lastFollowAt).coerceIn(300L, 1_500L)
-        lastFollowAt = now
-
-        val to = cmd.point
-        val shown = arrowAt
-        // A far jump (first fix, bad GPS): the arrow goes there at once.
-        val from = if (shown == null || Geo.distanceMeters(shown, to) > 300) to else shown
-        val dirFrom = arrowDir
-        val dirTo = cmd.heading ?: arrowDir
-        val cam = map.cameraPosition
+        val m = motion ?: ArrowMotion(mainTrack).also { motion = it }
+        m.onFix(now, cmd.point, cmd.along, cmd.speedMps, cmd.heading)
+        if (cmd.moveCamera && (cameraFree || blendFrom == null)) {
+            // Following starts, or comes back after looking around: ease in from where the camera is.
+            val cp = map.cameraPosition
+            blendFrom = cp.target
+            blendStartMs = now
+            camAzimuth = cp.azimuth
+            camZoom = cp.zoom
+            camTilt = cp.tilt
+        }
         cameraFree = !cmd.moveCamera
+        startFrames()
+    }
 
-        val arrow = navArrow?.takeIf { it.isValid } ?: navLayer.addPlacemark(
-            from,
-            ImageProvider.fromBitmap(PinFactory.navArrow(context)),
-            IconStyle().setAnchor(PointF(0.5f, 0.6f)).setRotationType(RotationType.ROTATE).setZIndex(60f),
-        ).also { navArrow = it }
-
-        followAnim?.cancel()
-        followAnim = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = ms
-            interpolator = LinearInterpolator()
-            addUpdateListener { a ->
-                val f = a.animatedValue as Float
-                val p = lerp(from, to, f)
-                arrowAt = p
-                arrowDir = turn(dirFrom, dirTo, f)
-                if (arrow.isValid) {
-                    arrow.geometry = p
-                    arrow.direction = arrowDir
-                }
-                if (!cameraFree) {
-                    // 16.5: about 200 m on the scale ruler (each zoom step halves it).
-                    map.move(
-                        CameraPosition(
-                            lerp(cam.target, to, f),
-                            cam.zoom + (16.5f - cam.zoom) * f,
-                            turn(cam.azimuth, dirTo, f),
-                            cam.tilt + (55f - cam.tilt) * f,
-                        ),
-                    )
-                }
-            }
+    /** Runs [onFrame] on every screen frame while guiding. */
+    private fun startFrames() {
+        if (frameLoop != null) return
+        lastFrameMs = SystemClock.uptimeMillis()
+        frameLoop = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 1_000
+            repeatCount = ValueAnimator.INFINITE
+            addUpdateListener { onFrame() }
             start()
         }
     }
 
+    private fun onFrame() {
+        val now = SystemClock.uptimeMillis()
+        val dt = ((now - lastFrameMs) / 1000f).coerceIn(0f, 0.1f)
+        lastFrameMs = now
+        val m = motion ?: return
+        val pose = m.pose(now) ?: return
+        val arrow = navArrow?.takeIf { it.isValid } ?: navLayer.addPlacemark(
+            pose.point,
+            ImageProvider.fromBitmap(PinFactory.navArrow(context)),
+            IconStyle().setAnchor(PointF(0.5f, 0.6f)).setRotationType(RotationType.ROTATE).setZIndex(60f),
+        ).also { navArrow = it }
+        arrow.geometry = pose.point
+        arrow.direction = pose.bearing
+
+        // The road behind the arrow disappears with it, a few times a second.
+        if (now - lastPassedMs > PASSED_EVERY_MS) {
+            lastPassedMs = now
+            m.shownAlongMeters?.let { s -> trackPosition(s)?.let { passed = it; applyPassed() } }
+        }
+
+        if (cameraFree) return
+        // Exponential easing: each value closes the same share of its gap per second,
+        // whatever the frame rate.
+        val turnK = 1f - exp(-dt / CAMERA_TURN_S)
+        val zoomK = 1f - exp(-dt / CAMERA_ZOOM_S)
+        camAzimuth = turn(camAzimuth, pose.bearing, turnK)
+        camZoom += (NAV_ZOOM - camZoom) * zoomK
+        camTilt += (NAV_TILT - camTilt) * zoomK
+        // Starting: glide from where the camera was to the arrow (smoothstep), then stay on it.
+        val f = ((now - blendStartMs) / BLEND_MS.toFloat()).coerceIn(0f, 1f)
+        val ease = f * f * (3 - 2 * f)
+        val from = blendFrom ?: pose.point
+        map.move(CameraPosition(lerp(from, pose.point, ease), camZoom, camAzimuth, camTilt))
+    }
+
+    /** Segment of [mainTrack] and the part of it at [along] meters from the start. */
+    private fun trackPosition(along: Double): Pair<Int, Double>? {
+        val cum = mainTrack?.cumulative ?: return null
+        if (cum.size < 2) return null
+        val i = java.util.Arrays.binarySearch(cum, along)
+        val seg = (if (i >= 0) i else -i - 2).coerceIn(0, cum.size - 2)
+        val len = cum[seg + 1] - cum[seg]
+        return seg to (if (len > 0) ((along - cum[seg]) / len).coerceIn(0.0, 1.0) else 0.0)
+    }
+
     private fun endFollow() {
-        followAnim?.cancel()
-        followAnim = null
+        frameLoop?.cancel()
+        frameLoop = null
+        motion = null
         navLayer.clear()
         navArrow = null
-        arrowAt = null
-        lastFollowAt = 0L
+        blendFrom = null
         cameraFree = false
     }
 
@@ -773,6 +813,7 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
             passedNext = null
             return
         }
+        if (motion != null) return // the gliding arrow hides the road itself, frame by frame
         passed = passedNext ?: (segment to t)
         passedNext = segment to t
         applyPassed()
@@ -871,3 +912,13 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
 
 /** How soon after "show the route" leaving guidance redoes it. */
 private const val REFIT_WINDOW_MS = 2_000L
+
+// Guidance camera: 16.5 is about 200 m on the scale ruler (each zoom step halves it).
+private const val NAV_ZOOM = 16.5f
+private const val NAV_TILT = 55f
+/** Time constants of the camera easing, in seconds. */
+private const val CAMERA_TURN_S = 0.35f
+private const val CAMERA_ZOOM_S = 0.5f
+/** How long the camera takes to glide onto the arrow when following starts. */
+private const val BLEND_MS = 800L
+private const val PASSED_EVERY_MS = 200L

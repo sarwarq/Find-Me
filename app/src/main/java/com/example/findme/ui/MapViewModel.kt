@@ -55,7 +55,14 @@ sealed interface MapCommand {
     data class MoveTo(val point: Point, val zoom: Float? = null) : MapCommand
     data class Fit(val box: BoundingBox) : MapCommand
     /** Guidance: glide the arrow to [point]; the camera follows it unless [moveCamera] is false. */
-    data class Follow(val point: Point, val heading: Float?, val moveCamera: Boolean = true) : MapCommand
+    data class Follow(
+        val point: Point,
+        val heading: Float?,
+        val moveCamera: Boolean = true,
+        /** Distance along the route, null when off it; with [speedMps] it lets the arrow glide. */
+        val along: Double? = null,
+        val speedMps: Double? = null,
+    ) : MapCommand
     data object ZoomIn : MapCommand
     data object ZoomOut : MapCommand
     data object ResetNorth : MapCommand
