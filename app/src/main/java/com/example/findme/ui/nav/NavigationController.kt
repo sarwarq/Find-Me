@@ -79,6 +79,7 @@ class NavigationController(
         }
         tracker = NavTracker(variant)
         active = true
+        location.setTravelMode(route.mode)
         route.to?.let { store.save(it, route.mode, route.stops.toList()) }
         track(me, speed = null)
         if (active) follow(me.point)
@@ -95,6 +96,7 @@ class NavigationController(
     fun end() {
         active = false
         location.stopSimulation() // a debug test drive ends with the guidance
+        location.setTravelMode(null)
         progress = null
         tracker = null
         freeJob?.cancel()

@@ -13,7 +13,11 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 object Geo {
+    /** One Earth model for the whole app: a sphere, so all distances agree with each other. */
     private const val EARTH_RADIUS_M = 6_371_000.0
+
+    /** Meters in one degree of latitude on that sphere (~111 195 m). */
+    const val M_PER_DEG = EARTH_RADIUS_M * Math.PI / 180.0
 
     fun distanceMeters(a: Point, b: Point): Double {
         val dLat = Math.toRadians(b.latitude - a.latitude)
@@ -73,8 +77,8 @@ object Geo {
 
     /** A box around [p] roughly [radiusM] meters in each direction. */
     fun boxAround(p: Point, radiusM: Double): BoundingBox {
-        val dLat = radiusM / 111_000.0
-        val dLon = radiusM / (111_000.0 * cos(Math.toRadians(p.latitude)).coerceAtLeast(0.01))
+        val dLat = radiusM / M_PER_DEG
+        val dLon = radiusM / (M_PER_DEG * cos(Math.toRadians(p.latitude)).coerceAtLeast(0.01))
         return BoundingBox(
             Point(p.latitude - dLat, p.longitude - dLon),
             Point(p.latitude + dLat, p.longitude + dLon),
@@ -93,8 +97,8 @@ object Geo {
      * on the segment (0 at [a], 1 at [b]). Uses a flat projection, fine for short segments.
      */
     fun distanceToSegment(p: Point, a: Point, b: Point): Pair<Double, Double> {
-        val kx = 111_320.0 * cos(Math.toRadians(p.latitude))
-        val ky = 110_574.0
+        val kx = M_PER_DEG * cos(Math.toRadians(p.latitude))
+        val ky = M_PER_DEG
         val ax = (a.longitude - p.longitude) * kx
         val ay = (a.latitude - p.latitude) * ky
         val bx = (b.longitude - p.longitude) * kx

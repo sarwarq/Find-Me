@@ -428,8 +428,10 @@ private fun memberStatus(
     val road = relation?.let { " · ${it.text()}" }.orEmpty()
     val eta = trip?.etaSeconds
     if (trip?.navigating != true || eta == null) return MemberStatus("On the way · $toGo to go$road", MeetColor)
-    val arrival = now + (eta * 1000).toLong()
-    val text = "${modeVerb(mode)} · ${Geo.durationText(eta)} · arrives ${clockOf(arrival)}"
+    // The ETA was counted when they sent the location, not now.
+    val arrival = (loc.updatedMillis ?: now) + (eta * 1000).toLong()
+    val left = ((arrival - now) / 1000.0).coerceAtLeast(0.0)
+    val text = "${modeVerb(mode)} · ${Geo.durationText(left)} · arrives ${clockOf(arrival)}"
     val late = lateMinutes(arrival, meetingTime)
     return when {
         late == null -> MemberStatus("$text$road", MeetColor)

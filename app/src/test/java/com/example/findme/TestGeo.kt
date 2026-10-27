@@ -1,6 +1,7 @@
 package com.example.findme
 
 import com.yandex.mapkit.geometry.Point
+import com.example.findme.data.Geo
 import kotlin.math.cos
 
 /**
@@ -10,7 +11,7 @@ import kotlin.math.cos
 object TestGeo {
     private const val LAT0 = 41.3111
     private const val LON0 = 69.2797
-    private const val M_PER_DEG_LAT = 111_195.0 // matches the haversine radius in Geo
+    private const val M_PER_DEG_LAT = Geo.M_PER_DEG
     private val mPerDegLon = M_PER_DEG_LAT * cos(Math.toRadians(LAT0))
 
     /** The point [east] meters east and [north] meters north of the origin. */

@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -325,6 +326,12 @@ fun MapScreen(vm: MapViewModel, authVm: AuthViewModel, meetVm: MeetViewModel, da
     val screen = vm.screen
     val barText = topBarText(screen)
     LaunchedEffect(barText, vm.nav.active) { if (barText == null || vm.nav.active) topBarPx = 0 }
+    // In guidance the screen stays on, like in a car navigator.
+    val rootView = LocalView.current
+    DisposableEffect(vm.nav.active) {
+        rootView.keepScreenOn = vm.nav.active
+        onDispose { rootView.keepScreenOn = false }
+    }
 
     Box(Modifier.fillMaxSize()) {
         AndroidView(factory = { engine.mapView }, modifier = Modifier.fillMaxSize())

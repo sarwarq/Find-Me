@@ -1,5 +1,6 @@
 package com.example.findme.data.location
 
+import com.example.findme.data.TravelMode
 import com.yandex.mapkit.MapKitFactory
 import com.yandex.mapkit.geometry.Point
 import com.yandex.mapkit.location.Location
@@ -47,15 +48,33 @@ object LocationRepository {
         override fun onLocationStatusUpdated(status: LocationStatus) = Unit
     }
 
+    /** What the fixes are for: MapKit filters and snaps them differently for a car or a walk. */
+    private var purpose = Purpose.GENERAL
+
+    private fun settings() = SubscriptionSettings(UseInBackground.DISALLOW, purpose)
+
     /** Starts the updates; call once location permission is granted. MapKit must be initialized. */
     fun start() {
         if (manager != null) return
         manager = MapKitFactory.getInstance().createLocationManager().also {
-            it.subscribeForLocationUpdates(
-                SubscriptionSettings(UseInBackground.DISALLOW, Purpose.GENERAL),
-                WeakReference(listener),
-            )
+            it.subscribeForLocationUpdates(settings(), WeakReference(listener))
         }
+    }
+
+    /** Guidance in [mode] (null when it ends): asks MapKit for fixes tuned to that travel. */
+    fun setTravelMode(mode: TravelMode?) {
+        val next = when (mode) {
+            TravelMode.Car -> Purpose.AUTOMOTIVE_NAVIGATION
+            TravelMode.Walk -> Purpose.PEDESTRIAN_NAVIGATION
+            TravelMode.Bike -> Purpose.BICYCLE_NAVIGATION
+            TravelMode.Scooter -> Purpose.SCOOTER_NAVIGATION
+            TravelMode.Transit, null -> Purpose.GENERAL // a bus ride is neither a walk nor a drive
+        }
+        if (next == purpose) return
+        purpose = next
+        val source = simulator ?: manager ?: return
+        source.unsubscribe(WeakReference(listener))
+        source.subscribeForLocationUpdates(settings(), WeakReference(listener))
     }
 
     fun stop() {
@@ -84,7 +103,7 @@ object LocationRepository {
         kit.setLocationManager(sim) // the arrow on the map follows the simulator too
         sim.subscribeForSimulatorEvents(WeakReference(simulatorListener))
         sim.subscribeForLocationUpdates(
-            SubscriptionSettings(UseInBackground.DISALLOW, Purpose.GENERAL),
+            settings(),
             WeakReference(listener),
         )
         sim.speed = speedMps
@@ -105,7 +124,7 @@ object LocationRepository {
         sim.stopSimulation()
         MapKitFactory.getInstance().resetLocationManagerToDefault()
         manager?.subscribeForLocationUpdates(
-            SubscriptionSettings(UseInBackground.DISALLOW, Purpose.GENERAL),
+            settings(),
             WeakReference(listener),
         )
     }

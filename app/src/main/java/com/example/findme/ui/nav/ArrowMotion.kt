@@ -157,13 +157,13 @@ class ArrowMotion(private val track: NavTrack?) {
 
     /** [p] in meters east/north of [origin] (flat, fine for a few hundred meters). */
     private fun toMeters(p: Point, origin: Point): Pair<Double, Double> {
-        val kx = M_PER_DEG * cos(Math.toRadians(origin.latitude))
-        return (p.longitude - origin.longitude) * kx to (p.latitude - origin.latitude) * M_PER_DEG
+        val kx = Geo.M_PER_DEG * cos(Math.toRadians(origin.latitude))
+        return (p.longitude - origin.longitude) * kx to (p.latitude - origin.latitude) * Geo.M_PER_DEG
     }
 
     private fun fromMeters(origin: Point, e: Double, n: Double): Point {
-        val kx = M_PER_DEG * cos(Math.toRadians(origin.latitude))
-        return Point(origin.latitude + n / M_PER_DEG, origin.longitude + e / kx)
+        val kx = Geo.M_PER_DEG * cos(Math.toRadians(origin.latitude))
+        return Point(origin.latitude + n / Geo.M_PER_DEG, origin.longitude + e / kx)
     }
 
     companion object {
@@ -179,6 +179,5 @@ class ArrowMotion(private val track: NavTrack?) {
         private const val MAX_SPEED = 70.0
         private const val STOPPED_SPEED = 0.5
         private const val MAX_FRAME_S = 0.1
-        private const val M_PER_DEG = 111_195.0
     }
 }
