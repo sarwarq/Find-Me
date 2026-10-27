@@ -54,7 +54,8 @@ sealed interface Screen {
 sealed interface MapCommand {
     data class MoveTo(val point: Point, val zoom: Float? = null) : MapCommand
     data class Fit(val box: BoundingBox) : MapCommand
-    data class Follow(val point: Point, val heading: Float?) : MapCommand
+    /** Guidance: glide the arrow to [point]; the camera follows it unless [moveCamera] is false. */
+    data class Follow(val point: Point, val heading: Float?, val moveCamera: Boolean = true) : MapCommand
     data object ZoomIn : MapCommand
     data object ZoomOut : MapCommand
     data object ResetNorth : MapCommand

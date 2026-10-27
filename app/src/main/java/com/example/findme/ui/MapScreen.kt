@@ -273,6 +273,10 @@ fun MapScreen(vm: MapViewModel, authVm: AuthViewModel, meetVm: MeetViewModel, da
     LaunchedEffect(meetVm) {
         snapshotFlow { vm.nav.progress }.collect { meetVm.onNavProgress(it?.remainingSeconds, it?.remainingMeters) }
     }
+    // Guidance: the part of the route behind me disappears.
+    LaunchedEffect(engine) {
+        snapshotFlow { vm.nav.progress }.collect { engine.setPassed(it?.trackSegment, it?.trackT ?: 0.0) }
+    }
     LaunchedEffect(engine, darkMap) {
         snapshotFlow { vm.mapLayer to vm.trafficOn }
             .collect { (layer, traffic) -> engine.applyLayers(layer, darkMap, traffic) }

@@ -60,6 +60,8 @@ data class RouteLine(
     val color: Int,
     val segmentColors: List<Int>? = null,
     val dashed: Boolean = false,
+    /** Segment of the variant's [NavTrack] where this line begins (transit: one line per leg). */
+    val trackStart: Int = 0,
 )
 
 enum class LegKind { Walk, Transport }

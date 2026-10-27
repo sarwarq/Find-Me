@@ -260,13 +260,13 @@ class RouteService {
                             departureMillis = estimation?.departureTime?.millis(),
                             arrivalMillis = estimation?.arrivalTime?.millis(),
                         )
-                        lines += RouteLine(geometry, color)
+                        lines += RouteLine(geometry, color, trackStart = start)
                     }
                     data.fitness != null -> {
                         walkSeconds += seconds
                         legs += TransitLeg(LegKind.Walk, Geo.durationText(seconds))
                         steps += TransitStep(kind = LegKind.Walk, startSegment = start, seconds = seconds)
-                        lines += RouteLine(geometry, COLOR_TRANSIT_WALK, dashed = true)
+                        lines += RouteLine(geometry, COLOR_TRANSIT_WALK, dashed = true, trackStart = start)
                     }
                 }
             }

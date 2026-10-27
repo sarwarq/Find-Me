@@ -1,6 +1,7 @@
 package com.example.findme.maps
 
 import android.os.SystemClock
+import android.graphics.Bitmap
 import android.content.Context
 import android.animation.ValueAnimator
 import android.graphics.PointF
@@ -23,6 +24,8 @@ import com.yandex.mapkit.geometry.BoundingBox
 import com.yandex.mapkit.geometry.Geometry
 import com.yandex.mapkit.geometry.Point
 import com.yandex.mapkit.geometry.Polyline
+import com.yandex.mapkit.geometry.PolylinePosition
+import com.yandex.mapkit.geometry.Subpolyline
 import com.yandex.mapkit.layers.GeoObjectTapListener
 import com.yandex.mapkit.layers.ObjectEvent
 import com.yandex.mapkit.logo.Alignment
@@ -114,6 +117,7 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
     }
 
     private val cameraListener = CameraListener { _, position, reason, finished ->
+        if (reason == CameraUpdateReason.GESTURES) cameraFree = true
         vm.onCameraChanged(position, reason == CameraUpdateReason.GESTURES, finished)
         updateScale()
     }
@@ -225,10 +229,10 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
     private fun styleUser(view: UserLocationView) {
         if (!view.isValid) return
         if (navMode) {
-            val arrow = ImageProvider.fromBitmap(PinFactory.navArrow(context))
-            val style = IconStyle().setAnchor(PointF(0.5f, 0.6f)).setRotationType(RotationType.ROTATE).setZIndex(50f)
-            view.arrow.setIcon(arrow, style)
-            view.pin.setIcon(arrow, style)
+            // Guidance draws its own arrow (see follow()); MapKit's icon is hidden.
+            val none = ImageProvider.fromBitmap(Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888))
+            view.arrow.setIcon(none, IconStyle())
+            view.pin.setIcon(none, IconStyle())
             view.accuracyCircle.fillColor = 0
             view.accuracyCircle.strokeWidth = 0f
         } else {
@@ -263,6 +267,7 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
         userView?.let(::styleUser)
         applyFocus()
         if (!enabled) {
+            endFollow()
             // The focus jump above cuts short the "north up + show the route" animation that
             // ends guidance, leaving the map tilted and turned: finish it here.
             val box = lastFit?.takeIf { SystemClock.uptimeMillis() - lastFitAt < REFIT_WINDOW_MS }
@@ -342,13 +347,18 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
     ) {
         routeLayer.clear()
         balloonLayer.clear()
+        mainLines.clear()
         if (!visible) return
-        if (!transit) {
+        // Alternatives only while choosing; in guidance they looked like the road already driven.
+        if (!transit && !navMode) {
             variants.forEachIndexed { index, variant ->
                 if (index != selected) variant.lines.forEach { addRouteLine(it, alternative = true, index = index) }
             }
         }
-        variants.getOrNull(selected)?.lines?.forEach { addRouteLine(it, alternative = false, index = selected) }
+        variants.getOrNull(selected)?.lines?.forEach { line ->
+            addRouteLine(line, alternative = false, index = selected)?.let { mainLines += it to line }
+        }
+        applyPassed()
         if (from != null && !from.isMyLocation) {
             routeLayer.addPlacemark(
                 from.point,
@@ -548,8 +558,8 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
         .setPlacement(TextStyle.Placement.BOTTOM)
         .setOffset(2f)
 
-    private fun addRouteLine(line: RouteLine, alternative: Boolean, index: Int) {
-        if (line.points.size < 2) return
+    private fun addRouteLine(line: RouteLine, alternative: Boolean, index: Int): PolylineMapObject? {
+        if (line.points.size < 2) return null
         val polyline = routeLayer.addPolyline(Polyline(line.points))
         polyline.userData = index
         if (alternative) {
@@ -579,6 +589,7 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
             polyline.gapLength = 5f
             if (!alternative) polyline.outlineColor = 0xFFFFFFFF.toInt()
         }
+        return polyline
     }
 
     /** "21 min / 10 km" on the selected route and "+6 min" on alternatives, where routes diverge. */
@@ -655,6 +666,132 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
         return ScreenRect(ScreenPoint(0f, top), ScreenPoint(w, bottom))
     }
 
+    // ---------------------------------------------------------------------
+    // Guidance arrow
+    // ---------------------------------------------------------------------
+
+    /**
+     * In guidance the arrow is our own placemark, not MapKit's user icon: MapKit jumps its icon
+     * to each new fix while the camera glides after it, so the arrow twitched once a second.
+     * Here the arrow and the camera move together, frame by frame, over the time between fixes.
+     */
+    private val navLayer = map.mapObjects.addCollection()
+    private var navArrow: PlacemarkMapObject? = null
+    private var arrowAt: Point? = null
+    private var arrowDir = 0f
+    private var followAnim: ValueAnimator? = null
+    private var lastFollowAt = 0L
+    /** The user moved the map: the running glide stops moving the camera. */
+    private var cameraFree = false
+
+    private fun follow(cmd: MapCommand.Follow) {
+        applyFocus()
+        val now = SystemClock.uptimeMillis()
+        // Glide for as long as the fixes take to come, so the arrow never stops between them.
+        val ms = if (lastFollowAt == 0L) 800L else (now - lastFollowAt).coerceIn(300L, 1_500L)
+        lastFollowAt = now
+
+        val to = cmd.point
+        val shown = arrowAt
+        // A far jump (first fix, bad GPS): the arrow goes there at once.
+        val from = if (shown == null || Geo.distanceMeters(shown, to) > 300) to else shown
+        val dirFrom = arrowDir
+        val dirTo = cmd.heading ?: arrowDir
+        val cam = map.cameraPosition
+        cameraFree = !cmd.moveCamera
+
+        val arrow = navArrow?.takeIf { it.isValid } ?: navLayer.addPlacemark(
+            from,
+            ImageProvider.fromBitmap(PinFactory.navArrow(context)),
+            IconStyle().setAnchor(PointF(0.5f, 0.6f)).setRotationType(RotationType.ROTATE).setZIndex(60f),
+        ).also { navArrow = it }
+
+        followAnim?.cancel()
+        followAnim = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = ms
+            interpolator = LinearInterpolator()
+            addUpdateListener { a ->
+                val f = a.animatedValue as Float
+                val p = lerp(from, to, f)
+                arrowAt = p
+                arrowDir = turn(dirFrom, dirTo, f)
+                if (arrow.isValid) {
+                    arrow.geometry = p
+                    arrow.direction = arrowDir
+                }
+                if (!cameraFree) {
+                    // 16.5: about 200 m on the scale ruler (each zoom step halves it).
+                    map.move(
+                        CameraPosition(
+                            lerp(cam.target, to, f),
+                            cam.zoom + (16.5f - cam.zoom) * f,
+                            turn(cam.azimuth, dirTo, f),
+                            cam.tilt + (55f - cam.tilt) * f,
+                        ),
+                    )
+                }
+            }
+            start()
+        }
+    }
+
+    private fun endFollow() {
+        followAnim?.cancel()
+        followAnim = null
+        navLayer.clear()
+        navArrow = null
+        arrowAt = null
+        lastFollowAt = 0L
+        cameraFree = false
+    }
+
+    private fun lerp(a: Point, b: Point, f: Float) = Point(
+        a.latitude + (b.latitude - a.latitude) * f,
+        a.longitude + (b.longitude - a.longitude) * f,
+    )
+
+    /** Angle [f] of the way from [from] to [to], turning the short way round (350° -> 10° is +20°). */
+    private fun turn(from: Float, to: Float, f: Float): Float {
+        val delta = ((to - from) % 360 + 540) % 360 - 180
+        return ((from + delta * f) % 360 + 360) % 360
+    }
+
+    // ---------------------------------------------------------------------
+    // The part of the route already driven
+    // ---------------------------------------------------------------------
+
+    /** Lines of the selected route, to hide the part behind me in guidance. */
+    private val mainLines = ArrayList<Pair<PolylineMapObject, RouteLine>>()
+    /** Hidden up to here (track segment, part of it); one fix behind, where the arrow is now. */
+    private var passed: Pair<Int, Double>? = null
+    private var passedNext: Pair<Int, Double>? = null
+
+    /** Where I am on the route's track in guidance, or null when not navigating. */
+    fun setPassed(segment: Int?, t: Double) {
+        if (segment == null) {
+            passed = null
+            passedNext = null
+            return
+        }
+        passed = passedNext ?: (segment to t)
+        passedNext = segment to t
+        applyPassed()
+    }
+
+    private fun applyPassed() {
+        val (segment, t) = passed ?: return
+        if (!navMode) return
+        mainLines.forEach { (obj, line) ->
+            if (!obj.isValid) return@forEach
+            val count = line.points.size - 1
+            val local = segment - line.trackStart
+            when {
+                local >= count -> obj.hide(Subpolyline(PolylinePosition(0, 0.0), PolylinePosition(count - 1, 1.0)))
+                local >= 0 -> obj.hide(Subpolyline(PolylinePosition(0, 0.0), PolylinePosition(local, t)))
+            }
+        }
+    }
+
     /** The last "show all of this" request, redone if guidance ends right after it. */
     private var lastFit: BoundingBox? = null
     private var lastFitAt = 0L
@@ -709,21 +846,7 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
                 fit(cmd.box)
             }
 
-            is MapCommand.Follow -> {
-                applyFocus()
-                val heading = cmd.heading
-                // Turn the short way round (350° -> 10° is +20°, not -340°).
-                val azimuth = if (heading == null) cp.azimuth
-                else cp.azimuth + (((heading - cp.azimuth) % 360 + 540) % 360 - 180)
-                // Without a GPS course MapKit shows the pin, not the arrow: aim it by my direction.
-                if (heading != null) userView?.takeIf { it.isValid }?.pin?.direction = heading
-                map.move(
-                    // 16.5: about 200 m on the scale ruler (each zoom step halves it).
-                    CameraPosition(cmd.point, 16.5f, azimuth, 55f),
-                    Animation(Animation.Type.LINEAR, 0.8f),
-                    null,
-                )
-            }
+            is MapCommand.Follow -> follow(cmd)
 
             MapCommand.ZoomIn -> map.move(
                 CameraPosition(cp.target, min(cp.zoom + 1f, 21f), cp.azimuth, cp.tilt),

@@ -24,6 +24,9 @@ data class NavProgress(
     val nextStop: Int = -1,
     val toStopMeters: Double = 0.0,
     val toStopSeconds: Double = 0.0,
+    /** Where I am on the route's track: segment index and how far along it (0..1). */
+    val trackSegment: Int = 0,
+    val trackT: Double = 0.0,
 )
 
 /** What one position fix changed in guidance. */
@@ -107,6 +110,8 @@ class NavTracker(private val variant: RouteVariant) {
             limitKmh = track.speedLimits.getOrNull(best)?.let { (it * 3.6f).roundToInt() }?.takeIf { it > 0 },
             next = next?.maneuver ?: Maneuver.Straight,
             nextInMeters = (nextAt - along).coerceAtLeast(0.0),
+            trackSegment = best,
+            trackT = bestT,
         )
         return NavUpdate(progress, routeHeading, reached, arrived = remaining < ARRIVED_M)
     }

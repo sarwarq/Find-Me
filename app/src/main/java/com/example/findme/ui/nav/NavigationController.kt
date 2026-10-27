@@ -91,6 +91,7 @@ class NavigationController(
     /** Ends guidance without touching the camera (the route screen is closing). */
     fun end() {
         active = false
+        location.stopSimulation() // a debug test drive ends with the guidance
         progress = null
         tracker = null
         freeJob?.cancel()
@@ -102,7 +103,8 @@ class NavigationController(
     fun onFix(fix: LocationFix) {
         if (!active) return
         track(fix, fix.speedMps)
-        if (active && !free) follow(fix.point)
+        // While I look around the map, the arrow still moves; the camera stays.
+        if (active) follow(fix.point, moveCamera = !free)
     }
 
     /** The user moved the map in guidance: look around freely, back to the arrow after 30 s. */
@@ -146,8 +148,8 @@ class NavigationController(
         }
     }
 
-    private fun follow(point: Point) {
-        commands.tryEmit(MapCommand.Follow(point, heading))
+    private fun follow(point: Point, moveCamera: Boolean = true) {
+        commands.tryEmit(MapCommand.Follow(point, heading, moveCamera))
     }
 
     private companion object {

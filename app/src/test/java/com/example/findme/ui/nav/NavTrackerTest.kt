@@ -47,6 +47,8 @@ class NavTrackerTest {
         assertEquals(700.0, u.progress.remainingMeters, 3.0)
         assertEquals(420.0, u.progress.remainingSeconds, 3.0) // 70 % of 10 min
         assertEquals(0.3f, u.progress.fraction, 0.01f)
+        // Where the arrow is on the track: the map hides the line behind it.
+        assertEquals(3.0, u.progress.trackSegment + u.progress.trackT, 0.05) // 300 m = start of segment 3
         assertFalse(u.arrived)
     }
 
