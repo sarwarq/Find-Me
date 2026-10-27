@@ -1,6 +1,5 @@
 package com.example.findme.data.location
 
-import com.example.findme.data.Geo
 import com.yandex.mapkit.MapKitFactory
 import com.yandex.mapkit.geometry.Point
 import com.yandex.mapkit.location.Location
@@ -26,23 +25,17 @@ class LocationFix(val point: Point, val speedMps: Double?, val heading: Float?)
  * The background sharing service has its own provider, since it runs with the app closed.
  */
 object LocationRepository {
-    /** Below this speed the GPS course is noise. */
-    private const val MIN_COURSE_SPEED_MPS = 1.5
-    /** Without a GPS course, how far I must move before the direction is updated. */
-    private const val MIN_MOVE_M = 8.0
-
     private var manager: LocationManager? = null
     private val _fix = MutableStateFlow<LocationFix?>(null)
     val fix: StateFlow<LocationFix?> = _fix.asStateFlow()
 
-    private var heading: Float? = null
-    private var headingFrom: Point? = null
+    private val headings = HeadingEstimator()
 
     // MapKit keeps only a weak reference to the listener.
     private val listener = object : LocationListener {
         override fun onLocationUpdated(location: Location) {
             val pos = location.position
-            updateHeading(pos, location.speed, location.heading)
+            val heading = headings.update(pos, location.speed, location.heading)
             _fix.value = LocationFix(pos, location.speed, heading)
         }
 
@@ -63,20 +56,5 @@ object LocationRepository {
     fun stop() {
         manager?.unsubscribe(WeakReference(listener))
         manager = null
-    }
-
-    private fun updateHeading(pos: Point, speed: Double?, course: Double?) {
-        if (course != null && (speed ?: 0.0) > MIN_COURSE_SPEED_MPS) {
-            heading = course.toFloat()
-            headingFrom = pos
-            return
-        }
-        val from = headingFrom
-        if (from == null) {
-            headingFrom = pos
-        } else if (Geo.distanceMeters(from, pos) >= MIN_MOVE_M) {
-            heading = Geo.bearing(from, pos)
-            headingFrom = pos
-        }
     }
 }

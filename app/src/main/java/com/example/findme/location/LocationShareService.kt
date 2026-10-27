@@ -27,6 +27,7 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
+import com.yandex.mapkit.geometry.Point
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -44,8 +45,7 @@ data class Sharing(
  * Sends my location to one meeting while I'm on my way. Runs as a foreground service with
  * a notification (the user always sees that sharing is on, and can stop it from there).
  *
- * Stops by itself on arrival (closer than [ARRIVE_METERS] to the place) and after [MAX_MILLIS].
- * Writes at most every [MIN_WRITE_MILLIS], or every [IDLE_WRITE_MILLIS] when standing still.
+ * When to write, when I have arrived and when to give up: see [SharePolicy].
  */
 class LocationShareService : Service() {
 
@@ -54,7 +54,7 @@ class LocationShareService : Service() {
 
     private var sharing: Sharing? = null
     private var uid: String? = null
-    private var lastWrite: Location? = null
+    private var lastWrite: Point? = null
     private var lastWriteMillis = 0L
 
     private val callback = object : LocationCallback() {
@@ -126,7 +126,7 @@ class LocationShareService : Service() {
         }
 
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, UPDATE_MILLIS)
-            .setMinUpdateIntervalMillis(MIN_WRITE_MILLIS)
+            .setMinUpdateIntervalMillis(SharePolicy.MIN_WRITE_MILLIS)
             .build()
         try {
             fused.removeLocationUpdates(callback)
@@ -141,19 +141,26 @@ class LocationShareService : Service() {
         val s = sharing ?: return
         val me = uid ?: return
         val now = System.currentTimeMillis()
+        val here = Point(loc.latitude, loc.longitude)
 
-        if (now - s.startedMillis > MAX_MILLIS) {
-            stopSharing(removeFromMap = true)
-            return
+        val decision = SharePolicy.decide(
+            nowMillis = now,
+            startedMillis = s.startedMillis,
+            here = here,
+            accuracyM = loc.accuracy,
+            destination = Point(s.destLat, s.destLon),
+            lastWrite = lastWrite,
+            lastWriteMillis = lastWriteMillis,
+        )
+        when (decision) {
+            ShareDecision.Expired -> {
+                stopSharing(removeFromMap = true)
+                return
+            }
+            ShareDecision.Skip -> return
+            ShareDecision.Write, ShareDecision.Arrived -> Unit
         }
-
-        val dest = Location("dest").apply { latitude = s.destLat; longitude = s.destLon }
-        val arrived = loc.distanceTo(dest) < ARRIVE_METERS && loc.accuracy < ARRIVE_ACCURACY
-
-        val prev = lastWrite
-        val moved = prev == null || loc.distanceTo(prev) > MIN_MOVE_METERS
-        val due = now - lastWriteMillis > IDLE_WRITE_MILLIS
-        if (!arrived && !(moved && now - lastWriteMillis >= MIN_WRITE_MILLIS) && !due) return
+        val arrived = decision == ShareDecision.Arrived
 
         repo.shareLocation(
             meetingId = s.meetingId,
@@ -167,7 +174,7 @@ class LocationShareService : Service() {
             etaSeconds = navProgress?.first,
             remainingMeters = navProgress?.second,
         )
-        lastWrite = loc
+        lastWrite = here
         lastWriteMillis = now
 
         if (arrived) {
@@ -253,12 +260,6 @@ class LocationShareService : Service() {
         private const val EXTRA_LON = "lon"
 
         private const val UPDATE_MILLIS = 5_000L
-        private const val MIN_WRITE_MILLIS = 5_000L
-        private const val IDLE_WRITE_MILLIS = 30_000L
-        private const val MIN_MOVE_METERS = 15f
-        private const val ARRIVE_METERS = 60f
-        private const val ARRIVE_ACCURACY = 100f
-        private const val MAX_MILLIS = 4 * 60 * 60 * 1000L
 
         private val _state = MutableStateFlow<Sharing?>(null)
 
