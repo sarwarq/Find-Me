@@ -2,6 +2,7 @@ package com.example.findme
 
 import android.graphics.Color
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -77,7 +78,16 @@ class MainActivity : ComponentActivity() {
     /** `findme://join/ABC123` → the "Join a meet-up" dialog with the code filled in. */
     private fun handleInvite(intent: Intent?) {
         val uri = intent?.data ?: return
-        if (intent.action != Intent.ACTION_VIEW || uri.scheme != "findme" || uri.host != "join") return
+        if (intent.action != Intent.ACTION_VIEW || uri.scheme != "findme") return
+        // Debug builds only, test drive along the current route with a fake location:
+        // adb shell am start -n bsb.findme.app/com.example.findme.MainActivity
+        //   -a android.intent.action.VIEW -d "findme://simulate?speed=15&heading=0"
+        if (uri.host == "simulate" && applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+            val speed = uri.getQueryParameter("speed")?.toDoubleOrNull() ?: 15.0
+            vm.simulateDrive(speed, gpsHeading = uri.getQueryParameter("heading") != "0")
+            return
+        }
+        if (uri.host != "join") return
         val code = uri.lastPathSegment ?: return
         meetVm.openJoin(code)
     }

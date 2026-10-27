@@ -1,5 +1,6 @@
 package com.example.findme.maps
 
+import android.os.SystemClock
 import android.content.Context
 import android.animation.ValueAnimator
 import android.graphics.PointF
@@ -18,6 +19,7 @@ import com.yandex.mapkit.Animation
 import com.yandex.mapkit.MapKitFactory
 import com.yandex.mapkit.ScreenPoint
 import com.yandex.mapkit.ScreenRect
+import com.yandex.mapkit.geometry.BoundingBox
 import com.yandex.mapkit.geometry.Geometry
 import com.yandex.mapkit.geometry.Point
 import com.yandex.mapkit.geometry.Polyline
@@ -260,6 +262,17 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
         navMode = enabled
         userView?.let(::styleUser)
         applyFocus()
+        if (!enabled) {
+            // The focus jump above cuts short the "north up + show the route" animation that
+            // ends guidance, leaving the map tilted and turned: finish it here.
+            val box = lastFit?.takeIf { SystemClock.uptimeMillis() - lastFitAt < REFIT_WINDOW_MS }
+            if (box != null) {
+                fit(box)
+            } else {
+                val cp = map.cameraPosition
+                map.move(CameraPosition(cp.target, cp.zoom, 0f, 0f), Animation(Animation.Type.SMOOTH, 0.4f), null)
+            }
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -642,6 +655,20 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
         return ScreenRect(ScreenPoint(0f, top), ScreenPoint(w, bottom))
     }
 
+    /** The last "show all of this" request, redone if guidance ends right after it. */
+    private var lastFit: BoundingBox? = null
+    private var lastFitAt = 0L
+
+    /** Shows the whole [box] in the visible area, north up, flat. */
+    private fun fit(box: BoundingBox) {
+        val pos = map.cameraPosition(Geometry.fromBoundingBox(box))
+        map.move(
+            CameraPosition(pos.target, min(pos.zoom - 0.4f, 17f), 0f, 0f),
+            Animation(Animation.Type.SMOOTH, 0.6f),
+            null,
+        )
+    }
+
     /** Moves the camera focus into the visible area without visually shifting the map. */
     private fun applyFocus() {
         val rect = visibleRect() ?: return
@@ -676,13 +703,10 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
             }
 
             is MapCommand.Fit -> {
+                lastFit = cmd.box
+                lastFitAt = SystemClock.uptimeMillis()
                 applyFocus()
-                val pos = map.cameraPosition(Geometry.fromBoundingBox(cmd.box))
-                map.move(
-                    CameraPosition(pos.target, min(pos.zoom - 0.4f, 17f), 0f, 0f),
-                    Animation(Animation.Type.SMOOTH, 0.6f),
-                    null,
-                )
+                fit(cmd.box)
             }
 
             is MapCommand.Follow -> {
@@ -721,3 +745,6 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
         }
     }
 }
+
+/** How soon after "show the route" leaving guidance redoes it. */
+private const val REFIT_WINDOW_MS = 2_000L

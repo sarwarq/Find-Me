@@ -523,6 +523,17 @@ class MapViewModel(
         return true
     }
 
+    /** Debug builds: drive the current route with a fake location (see MainActivity). */
+    fun simulateDrive(speedMps: Double, gpsHeading: Boolean) {
+        val points = route.currentVariant?.track?.points
+        if (points == null || points.size < 2) {
+            message = "Build a route first"
+            return
+        }
+        location.simulate(points, speedMps, gpsHeading)
+        message = "Test drive: ${(speedMps * 3.6).toInt()} km/h" + if (gpsHeading) "" else ", no GPS course"
+    }
+
     fun zoomIn() = commands.tryEmit(MapCommand.ZoomIn)
     fun zoomOut() = commands.tryEmit(MapCommand.ZoomOut)
     fun resetNorth() = commands.tryEmit(MapCommand.ResetNorth)

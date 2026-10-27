@@ -4,8 +4,13 @@ import com.yandex.mapkit.MapKitFactory
 import com.yandex.mapkit.geometry.Point
 import com.yandex.mapkit.location.Location
 import com.yandex.mapkit.location.LocationListener
+import com.yandex.mapkit.geometry.Polyline
 import com.yandex.mapkit.location.LocationManager
+import com.yandex.mapkit.location.LocationSettingsFactory
+import com.yandex.mapkit.location.LocationSimulator
+import com.yandex.mapkit.location.LocationSimulatorListener
 import com.yandex.mapkit.location.LocationStatus
+import com.yandex.mapkit.location.SimulationSettings
 import com.yandex.mapkit.location.Purpose
 import com.yandex.mapkit.location.SubscriptionSettings
 import com.yandex.mapkit.location.UseInBackground
@@ -54,7 +59,54 @@ object LocationRepository {
     }
 
     fun stop() {
+        stopSimulation()
         manager?.unsubscribe(WeakReference(listener))
         manager = null
+    }
+
+    // ---------- Test drives (debug builds only) ----------
+
+    private var simulator: LocationSimulator? = null
+    private val simulatorListener = object : LocationSimulatorListener {
+        override fun onSimulationFinished() = stopSimulation()
+    }
+
+    /**
+     * Drives along [route] at [speedMps] instead of using GPS, so guidance can be tried at
+     * the desk. With [gpsHeading] false the fixes carry no course, like a phone whose GPS
+     * gives none (the case where the map used not to turn).
+     */
+    fun simulate(route: List<Point>, speedMps: Double, gpsHeading: Boolean) {
+        stopSimulation()
+        val kit = MapKitFactory.getInstance()
+        val sim = kit.createLocationSimulator()
+        manager?.unsubscribe(WeakReference(listener))
+        kit.setLocationManager(sim) // the arrow on the map follows the simulator too
+        sim.subscribeForSimulatorEvents(WeakReference(simulatorListener))
+        sim.subscribeForLocationUpdates(
+            SubscriptionSettings(UseInBackground.DISALLOW, Purpose.GENERAL),
+            WeakReference(listener),
+        )
+        sim.speed = speedMps
+        val settings = LocationSettingsFactory.fineSettings()
+            .setProvideHeading(gpsHeading)
+            .setProvideSpeed(true)
+            .setSpeed(speedMps)
+        sim.startSimulation(listOf(SimulationSettings(Polyline(route), settings)))
+        simulator = sim
+    }
+
+    /** Back to the real GPS. */
+    fun stopSimulation() {
+        val sim = simulator ?: return
+        simulator = null
+        sim.unsubscribe(WeakReference(listener))
+        sim.unsubscribeFromSimulatorEvents(WeakReference(simulatorListener))
+        sim.stopSimulation()
+        MapKitFactory.getInstance().resetLocationManagerToDefault()
+        manager?.subscribeForLocationUpdates(
+            SubscriptionSettings(UseInBackground.DISALLOW, Purpose.GENERAL),
+            WeakReference(listener),
+        )
     }
 }
