@@ -3,6 +3,7 @@ package com.example.findme.ui.meet
 import com.example.findme.data.Geo
 import com.example.findme.data.TravelMode
 import com.example.findme.data.meet.RouteGeom
+import com.example.findme.data.meet.RouteProjection
 import com.yandex.mapkit.geometry.Point
 import kotlin.math.abs
 
@@ -24,6 +25,9 @@ data class MemberTrip(
     val remainingMeters: Double?,
     /** They follow a route in navigation. */
     val navigating: Boolean,
+    /** Their whole route, and how far along it they are (null when off it): their pin glides along it. */
+    val geom: RouteGeom? = null,
+    val along: Double? = null,
 )
 
 /** Where a member is compared with me on the road (phase 5). */
@@ -57,25 +61,27 @@ fun RoadRelation.short(): String = when (this) {
 private const val TOGETHER_METERS = 50.0
 
 /** Farther than this from a road is "not on it" (GPS error on a wide street is ~20–30 m). */
-private const val ON_ROAD_METERS = 40.0
+internal const val ON_ROAD_METERS = 40.0
 
 /**
  * Compares me and a member on the road:
  * 1. both on my route → ahead/behind along it;
  * 2. both on their route → ahead/behind along theirs;
  * 3. different roads, both navigating → where our routes meet.
- * [joinAlong] gives (and caches) where along [mine] it first meets [theirs].
+ * [joinAlong] gives (and caches) where along [mine], from my place on it, it first meets [theirs].
+ * [project] finds a person on a route (it may remember where they were last time).
  */
 fun roadRelation(
     me: Point,
     them: Point,
     mine: RouteGeom?,
     theirs: RouteGeom?,
-    joinAlong: (RouteGeom, RouteGeom) -> Double?,
+    joinAlong: (mine: RouteGeom, theirs: RouteGeom, myAlong: Double) -> Double?,
+    project: (geom: RouteGeom, pos: Point, isMe: Boolean) -> RouteProjection? = { g, p, _ -> g.project(p) },
 ): RoadRelation? {
     fun along(geom: RouteGeom): RoadRelation? {
-        val a = geom.project(me) ?: return null
-        val b = geom.project(them) ?: return null
+        val a = project(geom, me, true) ?: return null
+        val b = project(geom, them, false) ?: return null
         if (a.offRoute > ON_ROAD_METERS || b.offRoute > ON_ROAD_METERS) return null
         val diff = b.along - a.along
         return when {
@@ -87,8 +93,8 @@ fun roadRelation(
     mine?.let { g -> along(g)?.let { return it } }
     theirs?.let { g -> along(g)?.let { return it } }
     if (mine != null && theirs != null) {
-        val join = joinAlong(mine, theirs) ?: return null
-        val myAlong = mine.project(me)?.along ?: return null
+        val myAlong = project(mine, me, true)?.along ?: return null
+        val join = joinAlong(mine, theirs, myAlong) ?: return null
         val left = join - myAlong
         if (left > TOGETHER_METERS) return RoadRelation.JoinsIn(left)
     }

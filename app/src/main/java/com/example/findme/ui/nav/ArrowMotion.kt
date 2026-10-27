@@ -25,8 +25,19 @@ class ArrowPose(val point: Point, val bearing: Float)
  * Off the route the same is done in a plane, along the GPS direction.
  *
  * Plain math, no Android: the time is passed in, so it can be unit-tested.
+ *
+ * The same motion glides meet-up members' pins between their much rarer updates, with a longer
+ * [horizonS] and [maxGapS].
  */
-class ArrowMotion(private val track: NavTrack?) {
+class ArrowMotion(
+    private val track: NavTrack?,
+    /** Predict at most this far after a fix. */
+    private val horizonS: Double = HORIZON_S,
+    /** Farther than this from the prediction, the arrow is moved at once. */
+    private val snapM: Double = SNAP_M,
+    /** Two fixes further apart than this don't give a speed. */
+    private val maxGapS: Double = 5.0,
+) {
 
     // ---------- The last fix ----------
     private var fixMs = 0L
@@ -60,7 +71,7 @@ class ArrowMotion(private val track: NavTrack?) {
         val prevV = v
         val prevKnown = vKnown
         val dt = (nowMs - fixMs) / 1000.0
-        val usable = prevPoint != null && dt in 0.2..5.0
+        val usable = prevPoint != null && dt in 0.2..maxGapS
         val onRoute = along != null && track != null
 
         // Speed: GPS, else distance over time between the last two fixes.
@@ -101,22 +112,26 @@ class ArrowMotion(private val track: NavTrack?) {
         shownOff = !onRoute
     }
 
+    /** Long after the last fix nothing moves any more: frames can stop until the next one. */
+    fun settled(nowMs: Long): Boolean =
+        fixPoint == null || nowMs - fixMs > ((horizonS + 4 * CATCH_UP_S) * 1000).toLong()
+
     /** The arrow for the frame at [nowMs]; null before the first fix. */
     fun pose(nowMs: Long): ArrowPose? {
         val fix = fixPoint ?: return null
         val dt = if (frameMs == 0L) 0.0 else ((nowMs - frameMs) / 1000.0).coerceIn(0.0, MAX_FRAME_S)
         frameMs = nowMs
         val sinceFix = (nowMs - fixMs) / 1000.0
-        val (dist, predicted) = predict(sinceFix.coerceIn(0.0, HORIZON_S))
+        val (dist, predicted) = predict(sinceFix.coerceIn(0.0, horizonS))
         // Past the horizon the prediction stands still, so must the arrow.
-        val speed = if (sinceFix > HORIZON_S) 0.0 else predicted
+        val speed = if (sinceFix > horizonS) 0.0 else predicted
 
         val along = fixAlong
         val tr = track
         if (along != null && tr != null) {
             val target = (along + dist).coerceAtMost(tr.length)
             val shown = shownAlong
-            val next = if (shown == null || abs(target - shown) > SNAP_M) target
+            val next = if (shown == null || abs(target - shown) > snapM) target
             else shown + (speed + (target - shown) / CATCH_UP_S).coerceAtLeast(0.0) * dt
             val s = next.coerceIn(0.0, tr.length)
             shownAlong = s
@@ -135,7 +150,7 @@ class ArrowMotion(private val track: NavTrack?) {
         val tn = un * dist
         val ee = te - shownE
         val en = tn - shownN
-        if (hypot(ee, en) > SNAP_M) {
+        if (hypot(ee, en) > snapM) {
             shownE = te
             shownN = tn
         } else {

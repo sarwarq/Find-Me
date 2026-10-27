@@ -105,13 +105,15 @@ class NavTracker(private val variant: RouteVariant) {
         val nextStop = reachedStops.takeIf { it < variant.stopSegments.size } ?: -1
         val toStop = if (nextStop >= 0) (stopAt(nextStop) - along).coerceAtLeast(0.0) else 0.0
 
+        // Share of the time already driven: a jam ahead counts for more than an empty road.
+        val done = track.timeShare(along)
         val progress = NavProgress(
             nextStop = nextStop,
             toStopMeters = toStop,
-            toStopSeconds = variant.durationSeconds * toStop / track.length,
+            toStopSeconds = variant.durationSeconds * (track.timeShare(along + toStop) - done).coerceAtLeast(0.0),
             remainingMeters = remaining,
             remainingSeconds = if (step >= 0) transitSecondsLeft(steps, step, track, along, nowMillis)
-            else variant.durationSeconds * remaining / track.length,
+            else variant.durationSeconds * (1 - done),
             step = step,
             fraction = (along / track.length).toFloat().coerceIn(0f, 1f),
             speedKmh = ((speedMps ?: 0.0) * 3.6).roundToInt(),

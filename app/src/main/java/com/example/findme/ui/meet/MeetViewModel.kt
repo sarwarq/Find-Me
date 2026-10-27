@@ -20,6 +20,7 @@ import com.example.findme.data.meet.MeetingDraft
 import com.example.findme.data.meet.MeetingRepository
 import com.example.findme.data.meet.PolylineCodec
 import com.example.findme.data.meet.RouteGeom
+import com.example.findme.data.meet.RouteProjection
 import com.example.findme.data.meet.SharedRoute
 import com.example.findme.location.LocationShareService
 import com.example.findme.location.Sharing
@@ -114,6 +115,8 @@ class MeetViewModel(
 
     private val geoms = HashMap<String, RouteGeom>()
     private val joins = HashMap<Pair<RouteGeom, RouteGeom>, Double?>()
+    /** Segment where each person (uid) was found on each route last time. */
+    private val lastSegment = HashMap<Pair<String, RouteGeom>, Int>()
 
     init {
         viewModelScope.launch {
@@ -264,6 +267,7 @@ class MeetViewModel(
             val used = list.values.mapTo(HashSet()) { it.encoded }
             geoms.keys.retainAll(used)
             joins.keys.retainAll { it.second in geoms.values }
+            lastSegment.keys.retainAll { it.second in geoms.values || it.second === myNavRoute }
         }
         mapMeeting?.let(::loadPhotos)
         if (clockJob?.isActive != true) {
@@ -388,7 +392,7 @@ class MeetViewModel(
         if (loc.arrived) return null
         val route = routes[uid]
         val geom = routeGeom(uid)
-        val proj = geom?.project(Point(loc.lat, loc.lon))
+        val proj = geom?.let { project(it, uid, Point(loc.lat, loc.lon)) }
         val left = if (geom != null && proj != null) (geom.length - proj.along).coerceAtLeast(0.0) else null
         val estimate = if (route != null && geom != null && left != null && geom.length > 0) {
             route.durationSeconds * left / geom.length
@@ -400,7 +404,18 @@ class MeetViewModel(
             etaSeconds = loc.etaSeconds ?: estimate,
             remainingMeters = loc.remainingMeters ?: left,
             navigating = route != null,
+            geom = geom,
+            along = proj?.takeIf { it.offRoute < ON_ROAD_METERS }?.along,
         )
+    }
+
+    /**
+     * Where [uid] is on [geom], looking first around where they were last time, so a route
+     * that passes the same street twice doesn't make them jump to the other pass.
+     */
+    private fun project(geom: RouteGeom, uid: String, pos: Point): RouteProjection? {
+        val key = uid to geom
+        return geom.project(pos, near = lastSegment[key])?.also { lastSegment[key] = it.segment }
     }
 
     /** Phase 5: is this member ahead of me / behind me on the same road, or where do our roads meet. */
@@ -409,10 +424,18 @@ class MeetViewModel(
         if (uid == user?.uid) return null
         val loc = locations[uid] ?: return null
         if (loc.arrived || isStale(loc, now)) return null
-        return roadRelation(me, Point(loc.lat, loc.lon), myNavRoute, routeGeom(uid)) { mine, theirs ->
-            val key = mine to theirs
-            if (joins.containsKey(key)) joins[key] else mine.firstMeeting(theirs).also { joins[key] = it }
-        }
+        val myUid = user?.uid ?: return null
+        return roadRelation(
+            me, Point(loc.lat, loc.lon), myNavRoute, routeGeom(uid),
+            joinAlong = { mine, theirs, myAlong ->
+                // A cached meeting still ahead of me stays right; once I've passed it, look again from here.
+                val key = mine to theirs
+                val cached = joins[key]
+                if (joins.containsKey(key) && (cached == null || cached >= myAlong)) cached
+                else mine.firstMeeting(theirs, from = myAlong).also { joins[key] = it }
+            },
+            project = { geom, pos, isMe -> project(geom, if (isMe) myUid else uid, pos) },
+        )
     }
 
     // ---------- Actions ----------

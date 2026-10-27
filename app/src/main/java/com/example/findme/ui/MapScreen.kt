@@ -594,6 +594,12 @@ private fun meetMapData(meetVm: MeetViewModel, showRoutes: Boolean): MeetMapData
             stale = stale,
             arrived = loc.arrived,
             route = if (showRoutes) trip?.rest else null,
+            fixMillis = loc.updatedMillis,
+            // A stale or arrived pin stays where it is.
+            speedMps = if (loc.arrived || stale) 0.0 else loc.speed?.toDouble(),
+            heading = loc.heading,
+            track = trip?.geom?.track,
+            along = trip?.along,
         )
     }
     return MeetMapData(place, meeting.title, markers)

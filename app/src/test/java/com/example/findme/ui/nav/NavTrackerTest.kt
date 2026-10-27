@@ -53,6 +53,24 @@ class NavTrackerTest {
     }
 
     @Test
+    fun `a jam ahead takes more of the time left`() {
+        // 1 km in 10 segments: the first half at 10 m/s (50 s), the second in a jam at 2 m/s (250 s).
+        val road = lineNorth(1000.0)
+        val speeds = List(10) { if (it < 5) 10.0 else 2.0 }
+        val v = variant(road, seconds = 600.0).copy(track = NavTrack(road, emptyList(), emptyList(), null, speeds))
+        // Halfway is only 1/6 of the time: 5/6 of the 10 minutes are still ahead.
+        assertEquals(500.0, NavTracker(v).at(0.0, 500.0).progress.remainingSeconds, 3.0)
+    }
+
+    @Test
+    fun `unknown traffic speeds take the average of the known ones`() {
+        val road = lineNorth(1000.0)
+        val speeds = List(10) { if (it == 3) 0.0 else 10.0 }
+        val v = variant(road, seconds = 600.0).copy(track = NavTrack(road, emptyList(), emptyList(), null, speeds))
+        assertEquals(300.0, NavTracker(v).at(0.0, 500.0).progress.remainingSeconds, 3.0)
+    }
+
+    @Test
     fun `distance from the route line, for rebuilding the route`() {
         val t = NavTracker(variant(lineNorth(1000.0)))
         assertEquals(5.0, t.at(5.0, 300.0).offRouteMeters, 0.5)

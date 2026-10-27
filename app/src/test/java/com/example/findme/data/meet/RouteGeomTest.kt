@@ -46,6 +46,27 @@ class RouteGeomTest {
     }
 
     @Test
+    fun `a meeting already behind me does not count`() {
+        val theirs = RouteGeom((5 downTo 0).map { pt(it * 100.0, 600.0) })
+        assertEquals(600.0, road.firstMeeting(theirs, from = 400.0)!!, 1.0)
+        assertNull(road.firstMeeting(theirs, from = 700.0))
+    }
+
+    @Test
+    fun `a road driven twice - the person stays on the pass they were on`() {
+        // Up 1000 m and back down the same street 4 m to the east, a point every meter.
+        val there = (0..1000).map { pt(0.0, it.toDouble()) }
+        val back = (1000 downTo 0).map { pt(4.0, it.toDouble()) }
+        val twice = RouteGeom(there + back)
+        val who = pt(3.0, 300.0) // 1 m from the way back, 3 m from the way there
+        assertEquals(1704.0, twice.project(who)!!.along, 5.0)
+        // Last seen on the way there, around 290 m: still on the way there.
+        assertEquals(300.0, twice.project(who, near = 290)!!.along, 1.0)
+        // Nowhere near where they were last seen: the whole route is searched.
+        assertEquals(1104.0, twice.project(pt(3.0, 900.0), near = 100)!!.along, 5.0)
+    }
+
+    @Test
     fun `parallel roads never meet`() {
         val theirs = RouteGeom((0..10).map { pt(200.0, it * 100.0) })
         assertNull(road.firstMeeting(theirs))

@@ -145,12 +145,58 @@ class NavTrack(
     val maneuvers: List<ManeuverPoint>,
     /** Traffic color per segment, or null when the route has no traffic data. */
     val segmentColors: List<Int>?,
+    /** Traffic speed in m/s per segment (0 = unknown), or null when the route has none. */
+    segmentSpeeds: List<Double>? = null,
 ) {
     /** Distance from the start to every point, in meters. */
     val cumulative: DoubleArray = DoubleArray(points.size).also { acc ->
         for (i in 1 until points.size) acc[i] = acc[i - 1] + Geo.distanceMeters(points[i - 1], points[i])
     }
     val length: Double get() = cumulative.lastOrNull() ?: 0.0
+
+    /**
+     * Time from the start to every point at the traffic speed of each segment, in seconds;
+     * null without traffic data. Segments of unknown speed get the average of the known ones.
+     */
+    private val cumulativeTime: DoubleArray? = segmentSpeeds
+        ?.takeIf { it.size == points.size - 1 && points.size >= 2 }
+        ?.let { speeds ->
+            val ok = { i: Int -> speeds[i].isFinite() && speeds[i] > 0 }
+            val len = { i: Int -> cumulative[i + 1] - cumulative[i] }
+            val known = speeds.indices.filter(ok)
+            val knownTime = known.sumOf { len(it) / speeds[it].coerceAtLeast(MIN_JAM_SPEED) }
+            if (knownTime <= 0) return@let null
+            val average = known.sumOf(len) / knownTime
+            DoubleArray(points.size).also { acc ->
+                for (i in speeds.indices) {
+                    val v = if (ok(i)) speeds[i].coerceAtLeast(MIN_JAM_SPEED) else average
+                    acc[i + 1] = acc[i] + len(i) / v
+                }
+            }
+        }
+
+    /**
+     * Share of the trip's time spent driving the first [along] meters, 0..1. With traffic data
+     * a jam ahead weighs more than an empty road; without it, it is the share of the distance.
+     */
+    fun timeShare(along: Double): Double {
+        val total = length
+        if (total <= 0) return 1.0
+        val time = cumulativeTime ?: return (along / total).coerceIn(0.0, 1.0)
+        if (along <= 0) return 0.0
+        if (along >= total) return 1.0
+        var i = java.util.Arrays.binarySearch(cumulative, along)
+        if (i < 0) i = -i - 2
+        i = i.coerceIn(0, cumulative.size - 2)
+        val segLen = cumulative[i + 1] - cumulative[i]
+        val t = if (segLen > 0) (along - cumulative[i]) / segLen else 0.0
+        return (time[i] + (time[i + 1] - time[i]) * t) / time.last()
+    }
+
+    private companion object {
+        /** A standing jam still moves a little: keeps the time finite. */
+        const val MIN_JAM_SPEED = 1.0
+    }
 }
 
 /** Travel time by car to a place, shown on the home/work buttons and the place card. */

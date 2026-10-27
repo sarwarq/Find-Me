@@ -145,4 +145,20 @@ class ArrowMotionTest {
         assertEquals(10.0, Geo.distanceMeters(here, p!!), 0.5)
         assertEquals(90f, Geo.bearing(here, p), 2f)
     }
+
+    @Test
+    fun `a friend's pin goes on for 8 s between their updates, then waits`() {
+        val friend = ArrowMotion(track, horizonS = 8.0)
+        fix(friend, start, 100.0, 10.0)
+        // 6 s later, no new update yet: 60 m further along their road.
+        assertEquals(160.0, friend.frames(start, start + 6_000).last(), 1.0)
+        assertTrue(!friend.settled(start + 6_000))
+        // After 8 s it stops at 180 m, and frames can stop too.
+        assertEquals(180.0, friend.frames(start + 6_016, start + 20_000).last(), 1.0)
+        assertTrue(friend.settled(start + 20_000))
+        // The guidance arrow stops much sooner (2.5 s).
+        val arrow = ArrowMotion(track)
+        fix(arrow, start, 100.0, 10.0)
+        assertEquals(125.0, arrow.frames(start, start + 6_000).last(), 1.0)
+    }
 }

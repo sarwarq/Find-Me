@@ -211,7 +211,10 @@ class RouteService {
             bbox = Geo.boundsOf(points),
             distanceMeters = weight.distance.value,
             hasIncidents = flags.blocked || route.events.isNotEmpty(),
-            track = NavTrack(points, route.speedLimits.map { it }, maneuvers, segmentColors),
+            track = NavTrack(
+                points, route.speedLimits.map { it }, maneuvers, segmentColors,
+                segmentSpeeds = route.jamSegments.map { it.speed },
+            ),
         )
     }
 

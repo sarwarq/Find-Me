@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import android.content.Context
 import android.animation.ValueAnimator
 import android.graphics.PointF
-import android.view.animation.LinearInterpolator
 import com.example.findme.R
 import com.example.findme.data.Geo
 import com.example.findme.data.MapLayerType
@@ -77,6 +76,13 @@ data class MeetMarker(
     val arrived: Boolean,
     /** The rest of their route to the place, drawn in [color]; null to hide it. */
     val route: List<Point>? = null,
+    /** When their phone sent [point], their speed and direction: the pin moves on between updates. */
+    val fixMillis: Long? = null,
+    val speedMps: Double? = null,
+    val heading: Float? = null,
+    /** Their whole route, and how far along it [point] is (null off it): the pin follows the road. */
+    val track: NavTrack? = null,
+    val along: Double? = null,
 )
 
 /** What the live meet-up layer shows: the meeting place and the members who share their location. */
@@ -415,12 +421,13 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
         val pin: PlacemarkMapObject,
         var bitmap: android.graphics.Bitmap,
         var label: String,
-        /** Where the pin is drawn now (it glides towards the newest position). */
-        var shown: Point,
-        var target: Point,
         var line: PolylineMapObject? = null,
         var linePoints: List<Point>? = null,
-        var animator: ValueAnimator? = null,
+        /** Moves the pin every frame: on along their road at their speed, between updates. */
+        var motion: ArrowMotion? = null,
+        var motionTrack: NavTrack? = null,
+        /** The update [motion] last got, so the same one isn't fed twice. */
+        var fixKey: Pair<Long?, Point>? = null,
     )
 
     private var meetFlag: PlacemarkMapObject? = null
@@ -469,8 +476,6 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
                 },
                 bitmap = bmp,
                 label = m.label,
-                shown = m.point,
-                target = m.point,
             ).also { meetMembers[m.uid] = it }
 
             // The pin factory caches bitmaps, so the same look gives the same instance.
@@ -482,39 +487,58 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
                 obj.pin.setText(m.label, labelStyle())
                 obj.label = m.label
             }
-            if (!same(obj.target, m.point)) glide(obj, m.point)
+            feedMotion(obj, m)
             updateMemberLine(obj, m.route, m.color)
         }
     }
 
-    /** Moves a pin smoothly instead of jumping; far jumps (bad GPS fix, first fix) are instant. */
-    private fun glide(obj: MemberObjects, to: Point) {
-        obj.animator?.cancel()
-        obj.target = to
-        val from = obj.shown
-        if (Geo.distanceMeters(from, to) > 2_000) {
-            obj.shown = to
-            obj.pin.geometry = to
-            return
-        }
-        obj.animator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 1_000
-            interpolator = LinearInterpolator()
-            addUpdateListener { a ->
-                if (!obj.pin.isValid) {
-                    cancel()
-                    return@addUpdateListener
-                }
-                val f = a.animatedValue as Float
-                val p = Point(
-                    from.latitude + (to.latitude - from.latitude) * f,
-                    from.longitude + (to.longitude - from.longitude) * f,
-                )
-                obj.shown = p
-                obj.pin.geometry = p
+    /**
+     * A member's new position goes to their [ArrowMotion]: between updates (one every ~5 s) the
+     * pin goes on along their road at their speed, and a new update never makes it jump.
+     */
+    private fun feedMotion(obj: MemberObjects, m: MeetMarker) {
+        val key = m.fixMillis to m.point
+        if (obj.fixKey == key && obj.motionTrack === m.track) return
+        val now = System.currentTimeMillis()
+        val motion = obj.motion?.takeIf { obj.motionTrack === m.track }
+            ?: ArrowMotion(m.track, MEMBER_HORIZON_S, MEMBER_SNAP_M, MEMBER_HORIZON_S).also {
+                obj.motion = it
+                obj.motionTrack = m.track
             }
+        obj.fixKey = key
+        // The update is a little old when it arrives: the prediction counts from when it was sent.
+        motion.onFix((m.fixMillis ?: now).coerceAtMost(now), m.point, m.along, m.speedMps, m.heading)
+        startMemberFrames()
+    }
+
+    private var memberFrames: ValueAnimator? = null
+
+    /** Moves the members' pins every frame while any of them is still moving. */
+    private fun startMemberFrames() {
+        if (memberFrames != null) return
+        memberFrames = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 1_000
+            repeatCount = ValueAnimator.INFINITE
+            addUpdateListener { onMemberFrame() }
             start()
         }
+    }
+
+    private fun onMemberFrame() {
+        val now = System.currentTimeMillis()
+        var moving = false
+        meetMembers.values.forEach { obj ->
+            val motion = obj.motion ?: return@forEach
+            if (!obj.pin.isValid) return@forEach
+            motion.pose(now)?.let { obj.pin.geometry = it.point }
+            if (!motion.settled(now)) moving = true
+        }
+        if (!moving) stopMemberFrames()
+    }
+
+    private fun stopMemberFrames() {
+        memberFrames?.cancel()
+        memberFrames = null
     }
 
     private fun updateMemberLine(obj: MemberObjects, route: List<Point>?, color: Int) {
@@ -541,13 +565,12 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
     }
 
     private fun removeMember(obj: MemberObjects) {
-        obj.animator?.cancel()
         if (obj.pin.isValid) meetLayer.remove(obj.pin)
         obj.line?.let { if (it.isValid) meetLayer.remove(it) }
     }
 
     private fun clearMeetup() {
-        meetMembers.values.forEach { it.animator?.cancel() }
+        stopMemberFrames()
         meetMembers.clear()
         meetLayer.clear()
         meetFlag = null
@@ -922,3 +945,7 @@ private const val CAMERA_ZOOM_S = 0.5f
 /** How long the camera takes to glide onto the arrow when following starts. */
 private const val BLEND_MS = 800L
 private const val PASSED_EVERY_MS = 200L
+/** Members send a position about every 5 s: their pins move on this long after one. */
+private const val MEMBER_HORIZON_S = 8.0
+/** A member farther than this from where their pin is predicted jumps there at once. */
+private const val MEMBER_SNAP_M = 300.0

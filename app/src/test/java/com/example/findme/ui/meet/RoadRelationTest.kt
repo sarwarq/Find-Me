@@ -13,7 +13,7 @@ class RoadRelationTest {
     private val myRoad = RouteGeom(lineNorth(1000.0))
     /** Their road goes west along 600 m north and joins mine there. */
     private val theirRoad = RouteGeom((5 downTo 0).map { pt(it * 100.0, 600.0) })
-    private val join: (RouteGeom, RouteGeom) -> Double? = { a, b -> a.firstMeeting(b) }
+    private val join: (RouteGeom, RouteGeom, Double) -> Double? = { a, b, from -> a.firstMeeting(b, from) }
 
     private fun meters(r: RoadRelation?) = when (r) {
         is RoadRelation.Ahead -> r.meters
@@ -59,6 +59,16 @@ class RoadRelationTest {
     @Test
     fun `nothing to say when one of us is off the road`() {
         assertNull(roadRelation(pt(0.0, 200.0), pt(300.0, 400.0), myRoad, null, join))
+    }
+
+    @Test
+    fun `where roads meet is looked for from where I am`() {
+        // Their road crosses mine at 600 m, loops west and crosses it again at 900 m.
+        val loop = RouteGeom(listOf(pt(500.0, 600.0), pt(-200.0, 600.0), pt(-200.0, 900.0), pt(300.0, 900.0)))
+        // I'm at 800 m, past the first crossing: we meet at the second one, 100 m ahead.
+        val r = roadRelation(pt(0.0, 800.0), pt(450.0, 600.0), myRoad, loop, join)
+        assertTrue(r is RoadRelation.JoinsIn)
+        assertEquals(100.0, meters(r), 50.0)
     }
 
     @Test
