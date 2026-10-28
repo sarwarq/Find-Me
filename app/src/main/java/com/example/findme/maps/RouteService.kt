@@ -434,22 +434,23 @@ class RouteService(
     }
 
     private fun jamColor(type: JamType): Int = when (type) {
-        JamType.FREE -> 0xFF3CB83C.toInt()
-        JamType.LIGHT -> 0xFFFFC820.toInt()
-        JamType.HARD -> 0xFFFF4F3F.toInt()
-        JamType.VERY_HARD, JamType.BLOCKED -> 0xFF9E1B0F.toInt()
+        // A free road stays my blue; only slow parts stand out.
+        JamType.FREE -> COLOR_ROUTE
+        JamType.LIGHT -> 0xFFF2A20C.toInt()
+        JamType.HARD -> 0xFFE23B3B.toInt()
+        JamType.VERY_HARD, JamType.BLOCKED -> 0xFF8E1B12.toInt()
         else -> COLOR_ROUTE
     }
 
     companion object {
         private const val NEAR_STOP_M = 60.0
-        const val COLOR_ROUTE = 0xFF196DFF.toInt()
-        const val COLOR_TRANSIT = 0xFF196DFF.toInt()
+        const val COLOR_ROUTE = 0xFF2F55F4.toInt()
+        const val COLOR_TRANSIT = 0xFF2F55F4.toInt()
         /** Walking route: dashed indigo, like Yandex Maps. */
         const val COLOR_WALK = 0xFF6458E8.toInt()
         /** Walking parts of a public transport route. */
         const val COLOR_TRANSIT_WALK = 0xFF7C8AA5.toInt()
-        const val COLOR_BIKE = 0xFF2FA84F.toInt()
-        const val COLOR_SCOOTER = 0xFF8A4FFF.toInt()
+        const val COLOR_BIKE = 0xFF16A05A.toInt()
+        const val COLOR_SCOOTER = 0xFF7C5CFF.toInt()
     }
 }

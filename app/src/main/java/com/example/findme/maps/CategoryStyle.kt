@@ -7,11 +7,11 @@ import com.example.findme.R
 data class CategoryStyle(@param:DrawableRes val icon: Int, val color: Int)
 
 object CategoryStyles {
-    private const val RED = 0xFFFA453A.toInt()
-    private const val ORANGE = 0xFFFF8A00.toInt()
-    private const val GREEN = 0xFF2FA84F.toInt()
-    private const val PURPLE = 0xFF8A4FFF.toInt()
-    private const val BLUE = 0xFF196DFF.toInt()
+    private const val RED = 0xFFE23B3B.toInt()
+    private const val ORANGE = 0xFFF08C00.toInt()
+    private const val GREEN = 0xFF16A05A.toInt()
+    private const val PURPLE = 0xFF7C5CFF.toInt()
+    private const val BLUE = 0xFF2F55F4.toInt()
     private const val SLATE = 0xFF5C6B80.toInt()
     private const val PINK = 0xFFE64A8A.toInt()
     private const val MAGENTA = 0xFFB0559E.toInt()

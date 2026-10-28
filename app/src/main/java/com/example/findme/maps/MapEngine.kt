@@ -61,9 +61,6 @@ import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
 
-/** Orange used for meet-ups on the map. */
-const val MEET_COLOR = 0xFFFF7A00.toInt()
-
 /** A meet-up member drawn on the map. [label] goes under the pin, e.g. "Ali · 12 min". */
 data class MeetMarker(
     val uid: String,
@@ -198,6 +195,7 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
         if (dark != darkMap) {
             darkMap = dark
             lastResults?.let { (list, sel) -> renderResults(list, sel) }
+            navArrow?.takeIf { it.isValid }?.let(::setArrowIcon)
         }
     }
 
@@ -253,9 +251,9 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
                 ImageProvider.fromBitmap(PinFactory.userPin(context, heading = true)),
                 IconStyle().setAnchor(PointF(0.5f, 0.5f)).setRotationType(RotationType.ROTATE).setZIndex(50f),
             )
-            // The default accuracy circle is opaque; Yandex Maps draws it light and translucent.
-            view.accuracyCircle.fillColor = 0x1AFA453A
-            view.accuracyCircle.strokeColor = 0x40FA453A
+            // The default accuracy circle is opaque: draw it light and translucent, in my blue.
+            view.accuracyCircle.fillColor = 0x1A2F55F4
+            view.accuracyCircle.strokeColor = 0x402F55F4
             view.accuracyCircle.strokeWidth = 1f
         }
     }
@@ -302,8 +300,8 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
         resultsLayer.clear()
         val textStyle = TextStyle()
             .setSize(11f)
-            .setColor(if (darkMap) 0xFFF2F2F2.toInt() else 0xFF21201F.toInt())
-            .setOutlineColor(if (darkMap) 0xFF1E1E1E.toInt() else 0xFFFFFFFF.toInt())
+            .setColor(if (darkMap) 0xFFF1F4F9.toInt() else 0xFF10141C.toInt())
+            .setOutlineColor(if (darkMap) 0xFF0B0E14.toInt() else 0xFFFFFFFF.toInt())
             .setOutlineWidth(1.5f)
             .setPlacement(TextStyle.Placement.RIGHT)
             .setOffset(4f)
@@ -390,9 +388,9 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
         }
         to?.let {
             val style = when {
-                it.name == "Home" -> CategoryStyle(R.drawable.ms_home, 0xFF21201F.toInt())
-                it.name == "Work" -> CategoryStyle(R.drawable.ms_work, 0xFF21201F.toInt())
-                it.categoryClass == null && it.category == null -> CategoryStyle(R.drawable.ms_flag, 0xFF21201F.toInt())
+                it.name == "Home" -> CategoryStyle(R.drawable.ms_home, 0xFF10141C.toInt())
+                it.name == "Work" -> CategoryStyle(R.drawable.ms_work, 0xFF10141C.toInt())
+                it.categoryClass == null && it.category == null -> CategoryStyle(R.drawable.ms_flag, 0xFF10141C.toInt())
                 else -> CategoryStyles.of(it.categoryClass, it.category)
             }
             val bmp = PinFactory.finishPin(context, style)
@@ -406,8 +404,8 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
                 it.name,
                 TextStyle()
                     .setSize(13f)
-                    .setColor(if (darkMap) 0xFFF2F2F2.toInt() else 0xFF21201F.toInt())
-                    .setOutlineColor(if (darkMap) 0xFF1E1E1E.toInt() else 0xFFFFFFFF.toInt())
+                    .setColor(if (darkMap) 0xFFF1F4F9.toInt() else 0xFF10141C.toInt())
+                    .setOutlineColor(if (darkMap) 0xFF0B0E14.toInt() else 0xFFFFFFFF.toInt())
                     .setOutlineWidth(2f)
                     .setPlacement(TextStyle.Placement.BOTTOM)
                     .setOffset(2f),
@@ -448,11 +446,11 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
 
         val flag = meetFlag
         if (flag == null) {
-            val bmp = PinFactory.placePin(context, CategoryStyle(R.drawable.ms_flag, MEET_COLOR))
+            val bmp = PinFactory.meetPin(context)
             meetFlag = meetLayer.addPlacemark(
                 data.place,
                 ImageProvider.fromBitmap(bmp),
-                IconStyle().setAnchor(PinFactory.pinAnchor(context, bmp)).setZIndex(36f),
+                IconStyle().setAnchor(PinFactory.meetPinAnchor(context, bmp)).setZIndex(36f),
             ).also { it.setText(data.title, labelStyle()) }
         } else {
             if (meetFlagPoint?.let { same(it, data.place) } != true) flag.geometry = data.place
@@ -583,8 +581,8 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
 
     private fun labelStyle() = TextStyle()
         .setSize(13f)
-        .setColor(if (darkMap) 0xFFF2F2F2.toInt() else 0xFF21201F.toInt())
-        .setOutlineColor(if (darkMap) 0xFF1E1E1E.toInt() else 0xFFFFFFFF.toInt())
+        .setColor(if (darkMap) 0xFFF1F4F9.toInt() else 0xFF10141C.toInt())
+        .setOutlineColor(if (darkMap) 0xFF0B0E14.toInt() else 0xFFFFFFFF.toInt())
         .setOutlineWidth(2f)
         .setPlacement(TextStyle.Placement.BOTTOM)
         .setOffset(2f)
@@ -594,11 +592,11 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
         val polyline = routeLayer.addPolyline(Polyline(line.points))
         polyline.userData = index
         if (alternative) {
-            // Walking alternatives are gray dashes, driving ones pale blue.
-            polyline.setStrokeColor(if (line.dashed) 0xFFA3A3A3.toInt() else 0xFF9DB4F0.toInt())
+            // Walking alternatives are gray dashes, driving ones slate blue on a casing.
+            polyline.setStrokeColor(if (line.dashed) 0xFFA3A3A3.toInt() else 0xFF9AA6C9.toInt())
             polyline.strokeWidth = 5.5f
-            polyline.outlineColor = if (line.dashed) 0xFFFFFFFF.toInt() else 0xFF6F8DE0.toInt()
-            polyline.outlineWidth = 1f
+            polyline.outlineColor = if (darkMap) 0xFF0B0E14.toInt() else 0xFFFFFFFF.toInt()
+            polyline.outlineWidth = 1.5f
             polyline.zIndex = 1f
         } else {
             val colors = line.segmentColors
@@ -610,9 +608,10 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
             } else {
                 polyline.setStrokeColor(line.color)
             }
+            // My route: blue (amber and red where traffic is slow) on a white casing by day.
             polyline.strokeWidth = 7f
-            polyline.outlineColor = if (darkMap) 0xFF000000.toInt() else 0x59000000
-            polyline.outlineWidth = 1.2f
+            polyline.outlineColor = if (darkMap) 0xFF0B0E14.toInt() else 0xFFFFFFFF.toInt()
+            polyline.outlineWidth = 2f
             polyline.zIndex = 5f
         }
         if (line.dashed) {
@@ -644,9 +643,9 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
             } else {
                 val diff = variant.durationSeconds - main.durationSeconds
                 val (text, color) = when {
-                    diff >= 60 -> "+${Geo.durationText(diff)}" to 0xFFFA453A.toInt()
-                    diff <= -60 -> "−${Geo.durationText(-diff)}" to 0xFF2FA84F.toInt()
-                    else -> variant.durationText to 0xFF21201F.toInt()
+                    diff >= 60 -> "+${Geo.durationText(diff)}" to 0xFFE23B3B.toInt()
+                    diff <= -60 -> "−${Geo.durationText(-diff)}" to 0xFF16A05A.toInt()
+                    else -> variant.durationText to 0xFF10141C.toInt()
                 }
                 PinFactory.routeBalloon(context, text, null, false, color)
             }
@@ -765,11 +764,10 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
         lastFrameMs = now
         val m = motion ?: return
         val pose = m.pose(now) ?: return
-        val arrow = navArrow?.takeIf { it.isValid } ?: navLayer.addPlacemark(
-            pose.point,
-            ImageProvider.fromBitmap(PinFactory.navArrow(context)),
-            IconStyle().setAnchor(PointF(0.5f, 0.6f)).setRotationType(RotationType.ROTATE).setZIndex(60f),
-        ).also { navArrow = it }
+        val arrow = navArrow?.takeIf { it.isValid } ?: navLayer.addPlacemark(pose.point).also {
+            setArrowIcon(it)
+            navArrow = it
+        }
         arrow.geometry = pose.point
         arrow.direction = pose.bearing
 
@@ -792,6 +790,15 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
         val ease = f * f * (3 - 2 * f)
         val from = blendFrom ?: pose.point
         map.move(CameraPosition(lerp(from, pose.point, ease), camZoom, camAzimuth, camTilt))
+    }
+
+    /** The guidance arrow's picture: its blue edge is brighter on the night map. */
+    private fun setArrowIcon(arrow: PlacemarkMapObject) {
+        val bmp = PinFactory.navArrow(context, darkMap)
+        arrow.setIcon(
+            ImageProvider.fromBitmap(bmp),
+            IconStyle().setAnchor(PinFactory.navArrowAnchor(context, bmp)).setRotationType(RotationType.ROTATE).setZIndex(60f),
+        )
     }
 
     /** Segment of [mainTrack] and the part of it at [along] meters from the start. */

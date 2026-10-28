@@ -570,7 +570,7 @@ internal fun LineChip(label: String, color: Int?, outlined: Boolean) {
             .height(24.dp)
             .widthIn(min = 26.dp)
             .clip(shape)
-            .background(Color(color ?: 0xFF196DFF.toInt()))
+            .background(Color(color ?: 0xFF2F55F4.toInt()))
             .then(if (outlined) Modifier.border(1.5.dp, Color.White, shape) else Modifier)
             .padding(horizontal = 6.dp),
         contentAlignment = Alignment.Center,
