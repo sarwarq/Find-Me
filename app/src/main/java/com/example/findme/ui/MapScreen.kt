@@ -17,32 +17,25 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.VolumeOff
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,7 +65,7 @@ import com.example.findme.ui.components.SheetStop
 import com.example.findme.ui.components.YSheet
 import com.example.findme.ui.components.YSheetState
 import com.example.findme.ui.meet.JoinDialog
-import com.example.findme.ui.meet.MeetNavStrip
+import com.example.findme.ui.meet.MeetNavChips
 import com.example.findme.ui.meet.MyNav
 import com.example.findme.ui.meet.short
 import com.example.findme.ui.meet.agoText
@@ -86,15 +79,13 @@ import com.example.findme.ui.meet.MeetingSheet
 import com.example.findme.ui.meet.inviteText
 import com.example.findme.ui.profile.AuthViewModel
 import com.example.findme.ui.profile.ProfileSheet
-import com.example.findme.ui.screens.EventChip
+import com.example.findme.ui.screens.GuidanceOverlay
 import com.example.findme.ui.screens.HomeSheetContent
 import com.example.findme.ui.screens.HOME_PEEK
 import com.example.findme.ui.screens.HOME_PEEK_WITH_MEET
 import com.example.findme.ui.meet.featuredMeeting
 import com.example.findme.ui.screens.PLACE_PEEK
-import com.example.findme.ui.screens.LaneStrip
 import com.example.findme.ui.screens.LayersSheet
-import com.example.findme.ui.screens.NavigationPanel
 import com.example.findme.ui.screens.PlaceActions
 import com.example.findme.ui.screens.PlaceCardContent
 import com.example.findme.ui.screens.ResultsSheetContent
@@ -105,17 +96,11 @@ import com.example.findme.ui.screens.ROUTE_PEEK_TRANSIT
 import com.example.findme.ui.screens.SavedSheetContent
 import com.example.findme.ui.screens.SearchOverlay
 import com.example.findme.ui.settings.SettingsSheet
-import com.example.findme.ui.screens.SpeedBadges
 import com.example.findme.ui.screens.TopSearchBar
 import com.example.findme.ui.theme.yPalette
-import com.example.findme.R
-import com.example.findme.ui.components.MapButton
-import com.example.findme.ui.components.YIcon
-import androidx.compose.foundation.shape.CircleShape
 import com.yandex.mapkit.geometry.Point
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.filterNotNull
 
 private data class SheetConfig(
     val key: String,
@@ -168,6 +153,8 @@ fun MapScreen(vm: MapViewModel, authVm: AuthViewModel, meetVm: MeetViewModel, da
     val engine = remember { MapEngine(context, vm) }
     val sheetState = remember { YSheetState() }
     var topBarPx by remember { mutableIntStateOf(0) }
+    // Top edge of the guidance bottom bar (the map logo sits above it); NaN outside guidance.
+    var navBarTop by remember { mutableFloatStateOf(Float.NaN) }
     // Collapsed place card height, measured by the card itself.
     var placePeek by remember { mutableStateOf(PLACE_PEEK) }
 
@@ -311,14 +298,16 @@ fun MapScreen(vm: MapViewModel, authVm: AuthViewModel, meetVm: MeetViewModel, da
         snapshotFlow { vm.hasLocationPermission }.filter { it }.collect { engine.enableUserLocation() }
     }
     LaunchedEffect(engine) {
-        snapshotFlow { Triple(sheetState.top, topBarPx, vm.nav.active) to (vm.screen == Screen.Home) }
-            .collect { (state, home) ->
+        snapshotFlow { Triple(sheetState.top, topBarPx, vm.nav.active) to ((vm.screen == Screen.Home) to navBarTop) }
+            .collect { (state, more) ->
                 val (top, bar, nav) = state
+                val (home, guidanceBar) = more
                 // On the main screen the home/work row sits right above the sheet; the logo goes above it.
                 engine.setViewport(
                     if (nav) 0f else bar.toFloat(),
                     if (nav) Float.NaN else top,
                     logoLiftDp = if (home && !nav) 60f else 0f,
+                    navBarTopPx = guidanceBar,
                 )
             }
     }
@@ -364,65 +353,12 @@ fun MapScreen(vm: MapViewModel, authVm: AuthViewModel, meetVm: MeetViewModel, da
         AndroidView(factory = { engine.mapView }, modifier = Modifier.fillMaxSize())
 
         if (vm.nav.active) {
-            SpeedBadges(vm, Modifier.align(Alignment.TopEnd))
-            // Spoken guidance on/off, under the speed badges.
-            MapButton(
-                onClick = { vm.voice.toggleMuted() },
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .statusBarsPadding()
-                    .padding(top = 84.dp, end = 12.dp),
-                size = 48.dp,
-                shape = CircleShape,
-            ) {
-                Icon(
-                    if (vm.voice.muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                    contentDescription = if (vm.voice.muted) "Turn voice on" else "Turn voice off",
-                    tint = if (vm.voice.muted) yPalette.textSecondary else yPalette.accent,
-                )
-            }
-            // Top left, clear of the speed badges: a new route on its way, lanes, the next camera.
-            Column(
-                Modifier
-                    .align(Alignment.TopStart)
-                    .statusBarsPadding()
-                    .padding(start = 12.dp, top = 10.dp, end = 164.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                if (vm.nav.rerouting) {
-                    Surface(shape = CircleShape, color = yPalette.sheet, shadowElevation = 4.dp) {
-                        Text(
-                            "Recalculating route…",
-                            color = yPalette.textPrimary,
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                        )
-                    }
-                }
-                val progress = vm.nav.progress
-                progress?.lanes?.let { LaneStrip(it) }
-                progress?.event?.let { EventChip(it, progress.eventInMeters) }
-            }
-            NavigationPanel(vm, Modifier.align(Alignment.BottomCenter))
-            if (vm.nav.free) {
-                // The map was moved: back to the arrow now (it also comes back by itself after 30 s).
-                MapButton(
-                    onClick = { vm.nav.resumeFollow() },
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .navigationBarsPadding()
-                        .padding(end = 12.dp, bottom = 92.dp),
-                    size = 56.dp,
-                    shape = CircleShape,
-                ) { YIcon(R.drawable.ms_navigation, "Back to route", tint = yPalette.accent, size = 30.dp) }
-            }
-            MeetNavStrip(
-                meetVm,
-                Modifier
-                    .align(Alignment.BottomStart)
-                    .navigationBarsPadding()
-                    .padding(start = 12.dp, end = 12.dp, bottom = 92.dp),
-            )
+            GuidanceOverlay(
+                vm,
+                onShare = { shareRoute(context, vm) },
+                onSettings = { authVm.settingsOpen = true },
+                onBarTop = { navBarTop = it },
+            ) { MeetNavChips(meetVm) }
         } else {
             MapControls(
                 vm = vm,
@@ -673,7 +609,9 @@ private fun shareRoute(context: Context, vm: MapViewModel) {
     val to = vm.route.to ?: return
     val variant = vm.route.currentVariant ?: return
     val text = buildString {
-        append("On my way to ${to.name}, arriving at ${Geo.arrivalText(variant.durationSeconds)} (${variant.durationText})")
+        // In guidance the time left so far, else the whole trip.
+        val seconds = vm.nav.progress?.remainingSeconds ?: variant.durationSeconds
+        append("On my way to ${to.name}, arriving at ${Geo.arrivalText(seconds)} (${Geo.durationText(seconds)})")
         appendLine()
         append("https://yandex.com/maps/?pt=${to.point.longitude},${to.point.latitude}&z=17&l=map")
     }

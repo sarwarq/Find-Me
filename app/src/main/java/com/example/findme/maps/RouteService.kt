@@ -222,7 +222,11 @@ class RouteService(
         val segmentColors = jamColors.takeIf { it.size == points.size - 1 }
         val maneuvers = route.sections.drop(1).mapNotNull { section ->
             val action = section.metadata.annotation.action ?: return@mapNotNull null
-            ManeuverPoint(section.geometry.begin.segmentIndex, action.toManeuver())
+            ManeuverPoint(
+                section.geometry.begin.segmentIndex,
+                action.toManeuver(),
+                section.metadata.annotation.toponym?.takeIf { it.isNotBlank() },
+            )
         } + ManeuverPoint(max(points.size - 2, 0), Maneuver.Finish)
         return RouteVariant(
             durationText = Geo.durationText(weight.timeWithTraffic.value),

@@ -134,8 +134,8 @@ enum class Maneuver {
     ForkLeft, ForkRight, UturnLeft, UturnRight, Roundabout, RoundaboutExit, Finish,
 }
 
-/** A maneuver that starts at polyline segment [segment]. */
-data class ManeuverPoint(val segment: Int, val maneuver: Maneuver)
+/** A maneuver that starts at polyline segment [segment]; [street] is the road it leads onto. */
+data class ManeuverPoint(val segment: Int, val maneuver: Maneuver, val street: String? = null)
 
 /** One arrow painted on a lane. */
 enum class LaneArrow { UturnLeft, SharpLeft, Left, SlightLeft, Straight, SlightRight, Right, SharpRight, UturnRight }

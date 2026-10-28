@@ -12,6 +12,7 @@ import com.example.findme.data.TravelMode
 import com.example.findme.data.Waypoint
 import com.example.findme.data.location.LocationFix
 import com.example.findme.data.location.LocationRepository
+import com.example.findme.data.Geo
 import com.example.findme.ui.MapCommand
 import com.example.findme.ui.route.RouteController
 import com.yandex.mapkit.geometry.Point
@@ -144,6 +145,15 @@ class NavigationController(
             freeJob = null
             resumeFollow()
         }
+    }
+
+    /** The rest of the route on one screen; back to the arrow by the button or 30 s later. */
+    fun overview() {
+        val track = route.currentVariant?.track ?: return
+        val from = (progress?.trackSegment ?: 0).coerceIn(0, track.points.size - 1)
+        val box = Geo.boundsOf(track.points.subList(from, track.points.size)) ?: return
+        pauseFollow()
+        commands.tryEmit(MapCommand.Fit(box))
     }
 
     /** Back to the arrow at the guidance zoom (the button, or 30 s after the last gesture). */

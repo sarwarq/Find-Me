@@ -8,7 +8,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,7 +17,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,13 +38,13 @@ import androidx.compose.material3.TimePicker
 import androidx.compose.material3.TimePickerDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberTimePickerState
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -66,6 +64,7 @@ import com.example.findme.data.meet.LiveLocation
 import com.example.findme.data.meet.Meeting
 import com.example.findme.data.meet.MeetingMember
 import com.example.findme.data.meet.MeetingRepository
+import com.example.findme.ui.components.MapChip
 import com.example.findme.ui.components.ActionPill
 import com.example.findme.ui.components.SegmentedControl
 import com.example.findme.ui.components.YIcon
@@ -1070,9 +1069,9 @@ private fun AvatarStack(members: List<MeetingMember>, ring: Color) {
 // Members during my navigation
 // =====================================================================
 
-/** Over the navigation panel: "Ali · 1.2 km ahead · 8 min" for members on their way. */
+/** Under the guidance card: "(A) Ali  1.2 km ahead · 8 min" for up to two members on their way. */
 @Composable
-fun MeetNavStrip(vm: MeetViewModel, modifier: Modifier = Modifier) {
+fun MeetNavChips(vm: MeetViewModel) {
     val meeting = vm.mapMeeting ?: return
     val me = vm.user?.uid
     val rows = meeting.members.mapNotNull { m ->
@@ -1088,27 +1087,9 @@ fun MeetNavStrip(vm: MeetViewModel, modifier: Modifier = Modifier) {
         }
         m to detail
     }
-    if (rows.isEmpty()) return
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = yPalette.sheet,
-        shadowElevation = 6.dp,
-        modifier = modifier,
-    ) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-            rows.take(3).forEach { (m, detail) ->
-                Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Avatar(UserProfile(m.uid, m.name, null, m.photoUrl), 26.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "${m.name.substringBefore(' ')} · $detail",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = yPalette.textPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
+    rows.take(2).forEach { (m, detail) ->
+        MapChip(m.name.substringBefore(' '), detail) {
+            Avatar(UserProfile(m.uid, m.name, null, m.photoUrl), 28.dp)
         }
     }
 }

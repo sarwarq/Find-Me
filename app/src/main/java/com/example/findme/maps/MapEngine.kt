@@ -670,18 +670,24 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
     // ---------------------------------------------------------------------
 
     /** Map area not covered by the top panel and the bottom sheet, in pixels. */
-    fun setViewport(topPx: Float, bottomPx: Float, logoLiftDp: Float = 0f) {
+    /** Top of the guidance bottom bar in view pixels, NaN when unknown. */
+    private var navBarTop = Float.NaN
+
+    fun setViewport(topPx: Float, bottomPx: Float, logoLiftDp: Float = 0f, navBarTopPx: Float = Float.NaN) {
         viewportTop = topPx
         viewportBottom = bottomPx
+        navBarTop = navBarTopPx
         val h = mapView.height
         if (h > 0 && !bottomPx.isNaN()) {
             val logoBottom = (h - bottomPx).coerceAtLeast(0f) + (8 + logoLiftDp) * density
             map.logo.setAlignment(Alignment(HorizontalAlignment.LEFT, VerticalAlignment.BOTTOM))
             map.logo.setPadding(Padding((12 * density).toInt(), logoBottom.toInt()))
         } else if (h > 0) {
-            // Guidance: the logo sits above the bottom panel.
-            map.logo.setAlignment(Alignment(HorizontalAlignment.LEFT, VerticalAlignment.BOTTOM))
-            map.logo.setPadding(Padding((12 * density).toInt(), (96 * density).toInt()))
+            // Guidance: the logo sits centered right above the bottom panel, between the speed
+            // badges and the buttons.
+            val above = if (navBarTopPx.isNaN()) 96 * density else (h - navBarTopPx).coerceAtLeast(0f)
+            map.logo.setAlignment(Alignment(HorizontalAlignment.CENTER, VerticalAlignment.BOTTOM))
+            map.logo.setPadding(Padding(0, (above + 10 * density).toInt()))
         }
     }
 
@@ -862,12 +868,33 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
 
     /** Shows the whole [box] in the visible area, north up, flat. */
     private fun fit(box: BoundingBox) {
-        val pos = map.cameraPosition(Geometry.fromBoundingBox(box))
+        val area = if (navMode) guidanceFreeRect() else null
+        val pos = if (area != null) {
+            map.cameraPosition(Geometry.fromBoundingBox(box), area, 0f, 0f)
+        } else {
+            map.cameraPosition(Geometry.fromBoundingBox(box))
+        }
         map.move(
-            CameraPosition(pos.target, min(pos.zoom - 0.4f, 17f), 0f, 0f),
+            CameraPosition(pos.target, min(pos.zoom - (if (area != null) 0.1f else 0.4f), 17f), 0f, 0f),
             Animation(Animation.Type.SMOOTH, 0.6f),
             null,
         )
+    }
+
+    /**
+     * In guidance, the map between the maneuver card (top quarter) and the speed badges above
+     * the bottom bar, in map window pixels; null when the screen is too small for it.
+     */
+    private fun guidanceFreeRect(): ScreenRect? {
+        val w = mapWindow.width().toFloat()
+        val h = mapWindow.height().toFloat()
+        if (w <= 0f || h <= 0f) return null
+        val scale = h / mapView.height.coerceAtLeast(1)
+        val barTop = if (navBarTop.isNaN()) h - 100 * density * scale else navBarTop * scale
+        val top = h * 0.25f
+        val bottom = barTop - 80 * density * scale
+        if (bottom - top < h * 0.2f) return null
+        return ScreenRect(ScreenPoint(w * 0.08f, top), ScreenPoint(w * 0.92f, bottom))
     }
 
     /** Moves the camera focus into the visible area without visually shifting the map. */
@@ -904,6 +931,10 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
             }
 
             is MapCommand.Fit -> {
+                // Route overview in guidance: the camera stops following the arrow until resumed.
+                // (Ending guidance also fits the route before the map leaves guidance mode;
+                // lastFit redoes that fit once it has.)
+                if (navMode) cameraFree = true
                 lastFit = cmd.box
                 lastFitAt = SystemClock.uptimeMillis()
                 applyFocus()

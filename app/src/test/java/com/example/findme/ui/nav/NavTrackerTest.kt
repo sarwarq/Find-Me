@@ -131,6 +131,24 @@ class NavTrackerTest {
         assertEquals(300.0, p.nextInMeters, 3.0)
     }
 
+    @Test
+    fun `the street of the next turn and the turn after it`() {
+        val turns = listOf(
+            ManeuverPoint(5, Maneuver.Right, "Navoi Avenue"),
+            ManeuverPoint(8, Maneuver.Left),
+        )
+        val p = NavTracker(variant(lineNorth(1000.0), maneuvers = turns)).at(0.0, 200.0).progress
+        assertEquals("Navoi Avenue", p.nextStreet)
+        assertEquals(Maneuver.Left, p.then)
+        assertEquals(600.0, p.thenInMeters, 3.0)
+
+        // After the last turn nothing comes next.
+        val last = NavTracker(variant(lineNorth(1000.0), maneuvers = turns)).at(0.0, 700.0).progress
+        assertEquals(Maneuver.Left, last.next)
+        assertNull(last.nextStreet)
+        assertNull(last.then)
+    }
+
     // ---------- Direction of the map (the bug from 2026-10-27) ----------
 
     @Test

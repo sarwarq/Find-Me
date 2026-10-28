@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -469,4 +470,30 @@ fun CapsLabel(text: String, modifier: Modifier = Modifier) {
         color = yPalette.textSecondary,
         modifier = modifier,
     )
+}
+
+/**
+ * Pill over the map with a 28dp round [lead], bold [text] and a quieter [detail]:
+ * "(camera) Camera · 60  in 400 m". Used for the chips under the guidance card.
+ */
+@Composable
+fun MapChip(text: String, detail: String? = null, modifier: Modifier = Modifier, lead: @Composable () -> Unit) {
+    Surface(shape = CircleShape, color = yPalette.sheet, shadowElevation = 4.dp, modifier = modifier.heightIn(min = 40.dp)) {
+        Row(Modifier.padding(start = 6.dp, end = 14.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) { lead() }
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text,
+                style = MaterialTheme.typography.titleSmall,
+                color = yPalette.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            if (detail != null) {
+                Spacer(Modifier.width(6.dp))
+                Text(detail, style = MaterialTheme.typography.bodyMedium, color = yPalette.textSecondary, maxLines = 1)
+            }
+        }
+    }
 }

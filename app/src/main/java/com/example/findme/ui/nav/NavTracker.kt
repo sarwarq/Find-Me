@@ -22,6 +22,11 @@ data class NavProgress(
     val nextInMeters: Double,
     /** Track segment where [next] starts: tells one maneuver from the next. */
     val nextSegment: Int = -1,
+    /** The road [next] leads onto, when the route knows it. */
+    val nextStreet: String? = null,
+    /** The maneuver after [next] and how far it is from here, or null after the last one. */
+    val then: Maneuver? = null,
+    val thenInMeters: Double = 0.0,
     /** Public transport: index of the current step in [RouteVariant.steps], or -1. */
     val step: Int = -1,
     /** Next stop on the way (index in the route's stops), or -1 when only the destination is left. */
@@ -103,6 +108,8 @@ class NavTracker(private val variant: RouteVariant) {
 
         val next = track.maneuvers.firstOrNull { it.segment > best } ?: track.maneuvers.lastOrNull()
         val nextAt = next?.let { track.cumulative[it.segment.coerceIn(0, pts.size - 1)] } ?: track.length
+        val after = next?.let { n -> track.maneuvers.firstOrNull { it.segment > n.segment } }
+        val afterAt = after?.let { track.cumulative[it.segment.coerceIn(0, pts.size - 1)] } ?: 0.0
         val steps = variant.steps
         val step = if (steps.isEmpty()) -1 else steps.indexOfLast { it.startSegment <= best }.coerceAtLeast(0)
 
@@ -133,6 +140,9 @@ class NavTracker(private val variant: RouteVariant) {
             next = next?.maneuver ?: Maneuver.Straight,
             nextInMeters = (nextAt - along).coerceAtLeast(0.0),
             nextSegment = next?.segment ?: -1,
+            nextStreet = next?.street,
+            then = after?.maneuver,
+            thenInMeters = (afterAt - along).coerceAtLeast(0.0),
             trackSegment = best,
             trackT = bestT,
             lanes = laneAlong.indices.firstOrNull { laneAlong[it] - along in -LANES_BEHIND_M..LANES_AHEAD_M }

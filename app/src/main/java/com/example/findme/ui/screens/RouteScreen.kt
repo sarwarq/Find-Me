@@ -1,16 +1,12 @@
 package com.example.findme.ui.screens
 
 import androidx.annotation.DrawableRes
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -31,23 +27,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.CarCrash
-import androidx.compose.material.icons.filled.Construction
-import androidx.compose.material.icons.filled.LocalPolice
-import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.School
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableFloatStateOf
@@ -60,42 +46,24 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.zIndex
-import com.example.findme.ui.nav.NavProgress
 import com.example.findme.ui.route.RouteController
 import kotlin.math.roundToInt
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.findme.R
 import com.example.findme.data.Geo
-import com.example.findme.data.LaneArrow
-import com.example.findme.data.RoadEventKind
-import com.example.findme.data.RoadLane
-import com.example.findme.data.RouteEvent
-import com.example.findme.ui.nav.VoicePrompter
 import com.example.findme.data.LegKind
-import com.example.findme.data.Maneuver
-import com.example.findme.data.NavTrack
 import com.example.findme.data.RouteVariant
-import com.example.findme.data.TransitStep
 import com.example.findme.data.TravelMode
 import com.example.findme.data.WaypointSlot
-import com.example.findme.data.rideName
 import com.example.findme.ui.MapViewModel
-import com.example.findme.ui.components.CircleIconButton
 import com.example.findme.ui.components.YIcon
 import com.example.findme.ui.theme.YColors
 import com.example.findme.ui.theme.yPalette
@@ -422,41 +390,12 @@ private fun TextAction(text: String, onClick: () -> Unit) {
 
 /** Blue circle with the stop number, like the pin on the map. */
 @Composable
-private fun StopBadge(number: Int) {
+internal fun StopBadge(number: Int) {
     Box(
         Modifier.size(24.dp).clip(CircleShape).background(YColors.Blue),
         contentAlignment = Alignment.Center,
     ) {
         Text(number.toString(), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-    }
-}
-
-/** In guidance: "② Pharmacy · 1.2 km · 5 min" until the next stop. */
-@Composable
-private fun NextStopLine(vm: MapViewModel, progress: NavProgress) {
-    val stop = vm.route.stops.getOrNull(progress.nextStop) ?: return
-    Row(
-        Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        StopBadge(progress.nextStop + 1)
-        Spacer(Modifier.width(10.dp))
-        Text(
-            stop.name,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = yPalette.textPrimary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            "${Geo.shortDistance(progress.toStopMeters)} · ${Geo.durationText(progress.toStopSeconds)}",
-            style = MaterialTheme.typography.bodyMedium,
-            color = yPalette.textSecondary,
-            maxLines = 1,
-        )
     }
 }
 
@@ -550,7 +489,7 @@ private fun VariantCard(variant: RouteVariant, index: Int, selected: Boolean, mo
 }
 
 @DrawableRes
-private fun vehicleIcon(type: String?): Int = when (type) {
+internal fun vehicleIcon(type: String?): Int = when (type) {
     "underground" -> R.drawable.ms_subway
     "tramway", "tram" -> R.drawable.ms_tram
     "railway", "suburban" -> R.drawable.ms_train
@@ -624,7 +563,7 @@ private fun VehicleBadge(vehicle: String?, onBlue: Boolean) {
 
 /** Line number on the line's color, like "43m" on purple. */
 @Composable
-private fun LineChip(label: String, color: Int?, outlined: Boolean) {
+internal fun LineChip(label: String, color: Int?, outlined: Boolean) {
     val shape = RoundedCornerShape(7.dp)
     Box(
         Modifier
@@ -698,287 +637,3 @@ private fun CenterText(text: String) {
     )
 }
 
-// ---------------------------------------------------------------------------
-// Guidance mode
-// ---------------------------------------------------------------------------
-
-@DrawableRes
-private fun Maneuver.iconRes(): Int = when (this) {
-    Maneuver.Straight -> R.drawable.ms_straight
-    Maneuver.SlightLeft, Maneuver.ForkLeft -> R.drawable.ms_turn_slight_left
-    Maneuver.SlightRight -> R.drawable.ms_turn_slight_right
-    Maneuver.ForkRight -> R.drawable.ms_fork_right
-    Maneuver.Left, Maneuver.HardLeft -> R.drawable.ms_turn_left
-    Maneuver.Right, Maneuver.HardRight -> R.drawable.ms_turn_right
-    Maneuver.UturnLeft -> R.drawable.ms_u_turn_left
-    Maneuver.UturnRight -> R.drawable.ms_u_turn_right
-    Maneuver.Roundabout, Maneuver.RoundaboutExit -> R.drawable.ms_roundabout_right
-    Maneuver.Finish -> R.drawable.ms_sports_score
-}
-
-@DrawableRes
-private fun LaneArrow.iconRes(): Int = when (this) {
-    LaneArrow.UturnLeft -> R.drawable.ms_u_turn_left
-    LaneArrow.SharpLeft, LaneArrow.Left -> R.drawable.ms_turn_left
-    LaneArrow.SlightLeft -> R.drawable.ms_turn_slight_left
-    LaneArrow.Straight -> R.drawable.ms_straight
-    LaneArrow.SlightRight -> R.drawable.ms_turn_slight_right
-    LaneArrow.Right, LaneArrow.SharpRight -> R.drawable.ms_turn_right
-    LaneArrow.UturnRight -> R.drawable.ms_u_turn_right
-}
-
-/** The lanes ahead, left to right: the arrow to follow in blue, the rest grey. */
-@Composable
-fun LaneStrip(lanes: List<RoadLane>, modifier: Modifier = Modifier) {
-    BoxWithConstraints(modifier) {
-        // Many lanes get smaller, so the strip still fits next to the speed badges.
-        val size = ((maxWidth - 12.dp) / lanes.size - 3.dp).coerceIn(18.dp, 32.dp)
-        Surface(shape = RoundedCornerShape(14.dp), color = yPalette.sheet, shadowElevation = 4.dp) {
-            Row(Modifier.padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                lanes.forEachIndexed { i, lane ->
-                    if (i > 0) Box(Modifier.padding(horizontal = 1.dp).width(1.dp).height(size).background(yPalette.divider))
-                    Box(Modifier.size(size), contentAlignment = Alignment.Center) {
-                        lane.arrows.filter { it != lane.take }.forEach {
-                            YIcon(it.iconRes(), null, tint = yPalette.iconSecondary.copy(alpha = 0.45f), size = size)
-                        }
-                        lane.take?.let { YIcon(it.iconRes(), "Take this lane", tint = yPalette.accent, size = size) }
-                    }
-                }
-            }
-        }
-    }
-}
-
-private fun RoadEventKind.icon(): ImageVector = when (this) {
-    RoadEventKind.SpeedCamera, RoadEventKind.LaneCamera, RoadEventKind.Camera -> Icons.Filled.PhotoCamera
-    RoadEventKind.Police -> Icons.Filled.LocalPolice
-    RoadEventKind.Accident -> Icons.Filled.CarCrash
-    RoadEventKind.Works -> Icons.Filled.Construction
-    RoadEventKind.Closed -> Icons.Filled.Block
-    RoadEventKind.Danger -> Icons.Filled.Warning
-    RoadEventKind.School -> Icons.Filled.School
-}
-
-/** The next camera, accident or works ahead: what, its speed limit, how far. */
-@Composable
-fun EventChip(event: RouteEvent, meters: Double, modifier: Modifier = Modifier) {
-    val alarm = event.kind in setOf(RoadEventKind.Accident, RoadEventKind.Closed, RoadEventKind.Danger, RoadEventKind.Works)
-    Surface(shape = RoundedCornerShape(14.dp), color = yPalette.sheet, shadowElevation = 4.dp, modifier = modifier) {
-        Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                event.kind.icon(),
-                contentDescription = VoicePrompter.eventText(event.kind),
-                tint = if (alarm) YColors.Red else yPalette.textPrimary,
-                modifier = Modifier.size(22.dp),
-            )
-            event.limitKmh?.let { limit ->
-                Spacer(Modifier.width(6.dp))
-                Box(
-                    Modifier.size(28.dp).background(Color.White, CircleShape).border(3.dp, YColors.Red, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(Geo.speed(limit).toString(), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = YColors.Ink)
-                }
-            }
-            Spacer(Modifier.width(8.dp))
-            Text(Geo.shortDistance(meters), color = yPalette.textPrimary, style = MaterialTheme.typography.bodyMedium)
-        }
-    }
-}
-
-/** Current speed and the speed limit, top right in guidance mode. */
-@Composable
-fun SpeedBadges(vm: MapViewModel, modifier: Modifier = Modifier) {
-    val progress = vm.nav.progress ?: return
-    Row(
-        modifier.windowInsetsPadding(WindowInsets.statusBars).padding(top = 10.dp, end = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        val limit = progress.limitKmh
-        val over = limit != null && progress.speedKmh > limit
-        Surface(shape = CircleShape, color = yPalette.sheet, shadowElevation = 4.dp, modifier = Modifier.size(64.dp)) {
-            Box(contentAlignment = Alignment.Center) {
-                Text(
-                    Geo.speed(progress.speedKmh).toString(),
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (over) YColors.Red else yPalette.textPrimary,
-                    style = MaterialTheme.typography.titleLarge,
-                )
-            }
-        }
-        if (limit != null) {
-            Surface(shape = CircleShape, color = Color.White, shadowElevation = 4.dp, modifier = Modifier.size(64.dp)) {
-                Box(
-                    Modifier.border(6.dp, YColors.Red, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        Geo.speed(limit).toString(),
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = YColors.Ink,
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                }
-            }
-        }
-    }
-}
-
-/** Bottom bar of guidance: next maneuver, distance, arrival time, time left, progress and exit. */
-@Composable
-fun NavigationPanel(vm: MapViewModel, modifier: Modifier = Modifier) {
-    val variant = vm.route.currentVariant
-    val progress = vm.nav.progress
-    val remainingMeters = progress?.remainingMeters ?: variant?.distanceMeters ?: 0.0
-    val remainingSeconds = progress?.remainingSeconds ?: variant?.durationSeconds ?: 0.0
-    Surface(
-        modifier = modifier
-            .navigationBarsPadding()
-            .padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
-            .fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        color = yPalette.sheet,
-        shadowElevation = 10.dp,
-    ) {
-        val steps = variant?.steps.orEmpty()
-        val stepIndex = progress?.step ?: -1
-        val step = steps.getOrNull(stepIndex)
-        Column {
-        progress?.takeIf { it.nextStop >= 0 }?.let { NextStopLine(vm, it) }
-        if (step != null) TransitInstruction(steps, stepIndex)
-        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(yPalette.field),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (step != null) {
-                    val icon = if (step.kind == LegKind.Walk) R.drawable.ms_directions_walk else vehicleIcon(step.vehicle)
-                    YIcon(icon, null, tint = yPalette.iconSecondary, size = 28.dp)
-                } else {
-                    YIcon((progress?.next ?: Maneuver.Straight).iconRes(), "Next turn", tint = yPalette.iconSecondary, size = 28.dp)
-                }
-            }
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    NavNumber(Geo.shortDistance(remainingMeters))
-                    NavNumber(Geo.arrivalText(remainingSeconds))
-                    NavNumber(Geo.durationText(remainingSeconds))
-                }
-                Spacer(Modifier.height(6.dp))
-                RouteProgressBar(variant?.track, progress?.fraction ?: 0f)
-            }
-            Box(
-                Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(yPalette.field).clickable { vm.nav.stop() },
-                contentAlignment = Alignment.Center,
-            ) {
-                YIcon(R.drawable.ms_close, "End", tint = yPalette.iconSecondary, size = 26.dp)
-            }
-        }
-        }
-    }
-}
-
-/**
- * What to do now on public transport, above the guidance numbers:
- * "Walk to «Central Park» · bus 12 at 14:05" or "Bus 12 · 6 stops · get off at «Market»".
- */
-@Composable
-private fun TransitInstruction(steps: List<TransitStep>, index: Int) {
-    val step = steps[index]
-    val now = System.currentTimeMillis()
-    val (title, subtitle) = if (step.kind == LegKind.Walk) {
-        val ride = steps.drop(index + 1).firstOrNull { it.kind == LegKind.Transport }
-        if (ride == null) {
-            "Walk to the destination" to Geo.durationText(step.seconds)
-        } else {
-            val stop = ride.fromStop?.let { "Walk to «$it»" } ?: "Walk to the stop"
-            stop to listOfNotNull(
-                Geo.durationText(step.seconds),
-                rideName(ride) + (ride.departureText?.let { " at $it" } ?: ""),
-            ).joinToString(" · ")
-        }
-    } else {
-        val waitMin = step.departureMillis?.let { (it - now) / 60_000 }?.takeIf { it > 0 }
-        val head = rideName(step) + if (step.stops > 0) " · ${stopsText(step.stops)}" else ""
-        head to when {
-            waitMin != null -> "Departs ${step.departureText} · in $waitMin min"
-            step.toStop != null -> "Get off at «${step.toStop}»"
-            else -> Geo.durationText(step.seconds)
-        }
-    }
-    Row(
-        Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (step.kind == LegKind.Transport && step.lineName != null) {
-            LineChip(step.lineName, step.color, outlined = false)
-            Spacer(Modifier.width(10.dp))
-        }
-        Column(Modifier.weight(1f)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = yPalette.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = yPalette.textSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-}
-
-private fun stopsText(n: Int) = if (n == 1) "1 stop" else "$n stops"
-
-@Composable
-private fun NavNumber(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.titleLarge,
-        fontWeight = FontWeight.SemiBold,
-        color = yPalette.textPrimary,
-        maxLines = 1,
-    )
-}
-
-/** Thin bar colored by traffic along the route, with the passed part grayed out. */
-@Composable
-private fun RouteProgressBar(track: NavTrack?, fraction: Float) {
-    val passed = yPalette.closeCircle
-    Canvas(Modifier.fillMaxWidth().height(8.dp)) {
-        val barH = 5.dp.toPx()
-        val top = (size.height - barH) / 2
-        val colors = track?.segmentColors
-        if (track == null || colors == null || track.length <= 0) {
-            drawRoundRect(YColors.JamFree, Offset(0f, top), Size(size.width, barH), CornerRadius(barH / 2))
-        } else {
-            var start = 0
-            while (start < colors.size) {
-                var end = start
-                while (end + 1 < colors.size && colors[end + 1] == colors[start]) end++
-                val x0 = (track.cumulative[start] / track.length * size.width).toFloat()
-                val x1 = (track.cumulative[end + 1] / track.length * size.width).toFloat()
-                drawRect(Color(colors[start]), Offset(x0, top), Size((x1 - x0).coerceAtLeast(1f), barH))
-                start = end + 1
-            }
-        }
-        val px = size.width * fraction
-        drawRect(passed, Offset(0f, top), Size(px, barH))
-        val arrow = Path().apply {
-            moveTo(px + 7.dp.toPx(), size.height / 2)
-            lineTo(px - 4.dp.toPx(), top - 1.dp.toPx())
-            lineTo(px - 1.dp.toPx(), size.height / 2)
-            lineTo(px - 4.dp.toPx(), top + barH + 1.dp.toPx())
-            close()
-        }
-        drawPath(arrow, YColors.Yellow)
-    }
-}
