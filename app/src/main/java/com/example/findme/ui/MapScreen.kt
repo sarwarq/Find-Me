@@ -72,7 +72,6 @@ import com.example.findme.ui.components.SheetStop
 import com.example.findme.ui.components.YSheet
 import com.example.findme.ui.components.YSheetState
 import com.example.findme.ui.meet.JoinDialog
-import com.example.findme.ui.meet.LiveMeetChip
 import com.example.findme.ui.meet.MeetNavStrip
 import com.example.findme.ui.meet.MyNav
 import com.example.findme.ui.meet.short
@@ -89,6 +88,10 @@ import com.example.findme.ui.profile.AuthViewModel
 import com.example.findme.ui.profile.ProfileSheet
 import com.example.findme.ui.screens.EventChip
 import com.example.findme.ui.screens.HomeSheetContent
+import com.example.findme.ui.screens.HOME_PEEK
+import com.example.findme.ui.screens.HOME_PEEK_WITH_MEET
+import com.example.findme.ui.meet.featuredMeeting
+import com.example.findme.ui.screens.PLACE_PEEK
 import com.example.findme.ui.screens.LaneStrip
 import com.example.findme.ui.screens.LayersSheet
 import com.example.findme.ui.screens.NavigationPanel
@@ -96,8 +99,12 @@ import com.example.findme.ui.screens.PlaceActions
 import com.example.findme.ui.screens.PlaceCardContent
 import com.example.findme.ui.screens.ResultsSheetContent
 import com.example.findme.ui.screens.RouteSheetContent
+import com.example.findme.ui.screens.RouteTopCard
+import com.example.findme.ui.screens.ROUTE_PEEK
+import com.example.findme.ui.screens.ROUTE_PEEK_TRANSIT
 import com.example.findme.ui.screens.SavedSheetContent
 import com.example.findme.ui.screens.SearchOverlay
+import com.example.findme.ui.settings.SettingsSheet
 import com.example.findme.ui.screens.SpeedBadges
 import com.example.findme.ui.screens.TopSearchBar
 import com.example.findme.ui.theme.yPalette
@@ -117,16 +124,27 @@ private data class SheetConfig(
     val initial: SheetStop,
 )
 
-private fun sheetConfig(screen: Screen, transit: Boolean, stops: Int = 0) = when (screen) {
-    Screen.Home -> SheetConfig("home", 232.dp, listOf(SheetStop.Collapsed, SheetStop.Expanded), SheetStop.Collapsed)
+private fun sheetConfig(
+    screen: Screen,
+    transit: Boolean,
+    stops: Int = 0,
+    meetCard: Boolean = false,
+    placePeek: Dp = PLACE_PEEK,
+) = when (screen) {
+    Screen.Home -> SheetConfig(
+        if (meetCard) "home-meet" else "home",
+        if (meetCard) HOME_PEEK_WITH_MEET else HOME_PEEK,
+        listOf(SheetStop.Collapsed, SheetStop.Expanded),
+        SheetStop.Collapsed,
+    )
     is Screen.Results -> SheetConfig(
         "results", 150.dp, listOf(SheetStop.Collapsed, SheetStop.Half, SheetStop.Expanded), SheetStop.Half,
     )
-    is Screen.PlaceCard -> SheetConfig("place", 244.dp, listOf(SheetStop.Collapsed, SheetStop.Expanded), SheetStop.Collapsed)
-    // Public transport has an extra summary row under the variants.
+    is Screen.PlaceCard -> SheetConfig("place", placePeek, listOf(SheetStop.Collapsed, SheetStop.Expanded), SheetStop.Collapsed)
+    // Public transport has an extra summary row under the variants; stops live in the top card.
     Screen.Route -> SheetConfig(
-        (if (transit) "route-transit" else "route") + "-$stops",
-        (if (transit) 340.dp else 306.dp) + STOPS_ROW + STOP_ROW * stops,
+        if (transit) "route-transit" else "route",
+        if (transit) ROUTE_PEEK_TRANSIT else ROUTE_PEEK,
         listOf(SheetStop.Collapsed),
         SheetStop.Collapsed,
     )
@@ -134,10 +152,6 @@ private fun sheetConfig(screen: Screen, transit: Boolean, stops: Int = 0) = when
         "saved", 150.dp, listOf(SheetStop.Collapsed, SheetStop.Half, SheetStop.Expanded), SheetStop.Half,
     )
 }
-
-/** Height of the "+ Add stop" row, and of each stop in the route sheet (see RouteHeader). */
-private val STOPS_ROW = 40.dp
-private val STOP_ROW = 40.dp
 
 /** Text of the white search bar at the top of the map, or null when it is hidden. */
 private fun topBarText(screen: Screen): String? = when (screen) {
@@ -154,6 +168,8 @@ fun MapScreen(vm: MapViewModel, authVm: AuthViewModel, meetVm: MeetViewModel, da
     val engine = remember { MapEngine(context, vm) }
     val sheetState = remember { YSheetState() }
     var topBarPx by remember { mutableIntStateOf(0) }
+    // Collapsed place card height, measured by the card itself.
+    var placePeek by remember { mutableStateOf(PLACE_PEEK) }
 
     DisposableEffect(lifecycleOwner, engine) {
         val observer = LifecycleEventObserver { _, event ->
@@ -273,7 +289,7 @@ fun MapScreen(vm: MapViewModel, authVm: AuthViewModel, meetVm: MeetViewModel, da
     LaunchedEffect(engine) {
         // Members' routes would mix with my own route lines, so they show only off the route screen.
         // Members' routes stay hidden while I compare my own route variants, so the lines don't mix.
-        snapshotFlow { meetMapData(meetVm, showRoutes = vm.nav.active || vm.screen !is Screen.Route) }
+        snapshotFlow { meetMapData(meetVm, showRoutes = vm.settings.friendRoutes && (vm.nav.active || vm.screen !is Screen.Route)) }
             .collect { engine.renderMeetup(it) }
     }
     // "Go" to a meeting place: the others see my route and my progress along it.
@@ -334,7 +350,9 @@ fun MapScreen(vm: MapViewModel, authVm: AuthViewModel, meetVm: MeetViewModel, da
 
     val screen = vm.screen
     val barText = topBarText(screen)
-    LaunchedEffect(barText, vm.nav.active) { if (barText == null || vm.nav.active) topBarPx = 0 }
+    // The search bar and the route card report their bottom edge; without them the map uses the full height.
+    val hasTopBar = (barText != null || screen == Screen.Route) && !vm.nav.active
+    LaunchedEffect(hasTopBar) { if (!hasTopBar) topBarPx = 0 }
     // In guidance the screen stays on, like in a car navigator.
     val rootView = LocalView.current
     DisposableEffect(vm.nav.active) {
@@ -411,21 +429,12 @@ fun MapScreen(vm: MapViewModel, authVm: AuthViewModel, meetVm: MeetViewModel, da
                 sheetTop = sheetState.top,
                 topBarPx = topBarPx,
                 user = authVm.user,
+                onSearch = { vm.search.open() },
                 onProfileClick = { authVm.profileOpen = true },
                 onLocationClick = { if (!vm.onMyLocationClick()) requestPermission() },
                 onVoice = onVoice,
+                onNewMeetup = { meetVm.newFromMap(meetActions.choosePlace) },
             )
-
-            if (screen == Screen.Home && meetVm.mapMeeting != null) {
-                LiveMeetChip(
-                    meetVm,
-                    onOpen = { meetVm.openMeeting(it.id) },
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .windowInsetsPadding(WindowInsets.statusBars)
-                        .padding(top = 12.dp),
-                )
-            }
 
             if (screen is Screen.Results && vm.search.showSearchHere) {
                 Surface(
@@ -447,7 +456,13 @@ fun MapScreen(vm: MapViewModel, authVm: AuthViewModel, meetVm: MeetViewModel, da
                 }
             }
 
-            val config = sheetConfig(screen, transit = vm.route.mode == TravelMode.Transit, stops = vm.route.stops.size)
+            val config = sheetConfig(
+                screen,
+                transit = vm.route.mode == TravelMode.Transit,
+                stops = vm.route.stops.size,
+                meetCard = meetVm.featuredMeeting() != null,
+                placePeek = placePeek,
+            )
             YSheet(
                 state = sheetState,
                 contentKey = config.key,
@@ -458,14 +473,17 @@ fun MapScreen(vm: MapViewModel, authVm: AuthViewModel, meetVm: MeetViewModel, da
                 when (screen) {
                     Screen.Home -> HomeSheetContent(vm, actions, meetVm)
                     is Screen.Results -> ResultsSheetContent(vm, screen.query)
-                    is Screen.PlaceCard -> PlaceCardContent(vm, screen, actions, onMeet = meetVm::startNew)
-                    Screen.Route -> RouteSheetContent(vm)
+                    is Screen.PlaceCard -> PlaceCardContent(vm, screen, actions, meetVm) { placePeek = it }
+                    Screen.Route -> RouteSheetContent(vm, onShare = { shareRoute(context, vm) })
                     Screen.Saved -> SavedSheetContent(vm)
                 }
             }
 
             if (barText != null) {
                 TopSearchBar(barText, onClick = { vm.search.open(barText) }) { topBarPx = it }
+            }
+            if (screen == Screen.Route) {
+                RouteTopCard(vm) { topBarPx = it }
             }
         }
 
@@ -479,6 +497,7 @@ fun MapScreen(vm: MapViewModel, authVm: AuthViewModel, meetVm: MeetViewModel, da
 
         if (vm.layersOpen) LayersSheet(vm)
         if (authVm.profileOpen) ProfileSheet(authVm)
+        if (authVm.settingsOpen) SettingsSheet(onClose = { authVm.settingsOpen = false })
         if (meetVm.listOpen) MeetListSheet(meetVm, meetActions, vm.userLocation)
         if (meetVm.openId != null) MeetingSheet(meetVm, meetActions, vm.userLocation)
         if (meetVm.editor != null) MeetEditorSheet(meetVm)
@@ -510,8 +529,8 @@ private fun MessageToast(vm: MapViewModel, modifier: Modifier) {
     }
     AnimatedVisibility(visible = text != null, enter = fadeIn(), exit = fadeOut(), modifier = modifier) {
         Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = Color(0xEE21201F),
+            shape = RoundedCornerShape(16.dp),
+            color = Color(0xF010141C),
             modifier = Modifier
                 .windowInsetsPadding(WindowInsets.statusBars)
                 .padding(top = 64.dp, start = 24.dp, end = 24.dp),
@@ -648,6 +667,19 @@ private fun meetActions(
         Geo.boundsOf(points)?.let { vm.commands.tryEmit(MapCommand.Fit(it)) }
     },
 )
+
+/** "On my way to Lumen Coffee, arriving at 18:42 (18 min)" with a map link, through the share sheet. */
+private fun shareRoute(context: Context, vm: MapViewModel) {
+    val to = vm.route.to ?: return
+    val variant = vm.route.currentVariant ?: return
+    val text = buildString {
+        append("On my way to ${to.name}, arriving at ${Geo.arrivalText(variant.durationSeconds)} (${variant.durationText})")
+        appendLine()
+        append("https://yandex.com/maps/?pt=${to.point.longitude},${to.point.latitude}&z=17&l=map")
+    }
+    val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
+    context.startSafely(Intent.createChooser(send, "Share route"), vm)
+}
 
 private fun Context.startSafely(intent: Intent, vm: MapViewModel) {
     try {

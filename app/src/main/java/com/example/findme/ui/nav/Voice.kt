@@ -7,23 +7,18 @@ import android.media.AudioManager
 import android.media.ToneGenerator
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import androidx.core.content.edit
+import com.example.findme.data.SettingsStore
 import java.util.Locale
 
 /**
  * Spoken guidance through Android's TextToSpeech. Music gets quieter while it speaks.
  * The engine starts on the first phrase, so the app pays nothing until guidance talks.
  */
-class Voice(context: Context) {
+class Voice(context: Context, private val settings: SettingsStore) {
     private val app = context.applicationContext
-    private val prefs = app.getSharedPreferences("voice", Context.MODE_PRIVATE)
 
-    /** The sound button in guidance; remembered between launches. */
-    var muted by mutableStateOf(prefs.getBoolean(KEY_MUTED, false))
-        private set
+    /** The sound button in guidance and the Voice setting: the same switch. */
+    val muted: Boolean get() = !settings.voice
 
     private var tts: TextToSpeech? = null
     private var ready = false
@@ -40,10 +35,11 @@ class Voice(context: Context) {
         .setAudioAttributes(attributes)
         .build()
 
-    fun toggleMuted() {
-        muted = !muted
-        prefs.edit { putBoolean(KEY_MUTED, muted) }
-        if (muted) {
+    fun toggleMuted() = setMuted(!muted)
+
+    fun setMuted(value: Boolean) {
+        settings.voice = !value
+        if (value) {
             pending = null
             tts?.stop()
             audio.abandonAudioFocusRequest(focus)
@@ -96,9 +92,5 @@ class Voice(context: Context) {
         })
         tts = engine
         return engine
-    }
-
-    private companion object {
-        const val KEY_MUTED = "muted"
     }
 }

@@ -20,6 +20,8 @@ class AuthViewModel(private val repo: AuthRepository) : ViewModel() {
     var user by mutableStateOf<UserProfile?>(null); private set
     var signingIn by mutableStateOf(false); private set
     var profileOpen by mutableStateOf(false)
+    /** The settings sheet, opened from the profile. */
+    var settingsOpen by mutableStateOf(false)
 
     /** Errors for the toast; the screen clears it after showing. */
     var error by mutableStateOf<String?>(null)

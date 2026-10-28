@@ -54,6 +54,9 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.zIndex
@@ -106,33 +109,18 @@ fun TravelMode.iconRes(): Int = when (this) {
     TravelMode.Scooter -> R.drawable.ms_electric_scooter
 }
 
-/** Route sheet: from/to header, travel mode tabs, route variants and the "Go" button. */
+/** Collapsed route sheet: variant cards and the Go row; public transport adds a summary line. */
+val ROUTE_PEEK = 228.dp
+val ROUTE_PEEK_TRANSIT = 262.dp
+
+/** Route sheet: route variants, "Go" and "share with friends". From/to and modes are in [RouteTopCard]. */
 @Composable
-fun RouteSheetContent(vm: MapViewModel) {
+fun RouteSheetContent(vm: MapViewModel, onShare: () -> Unit) {
     val result = vm.route.results[vm.route.mode]
     val variants = result?.variants.orEmpty()
 
     Column(Modifier.fillMaxSize()) {
-        RouteHeader(vm)
-        StopsEditor(vm)
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier.padding(top = 12.dp),
-        ) {
-            items(TravelMode.entries) { mode ->
-                val r = vm.route.results[mode]
-                val label = when {
-                    r == null -> null
-                    r.loading -> "..."
-                    r.variants.isNotEmpty() -> r.variants.first().durationText
-                    else -> "—"
-                }
-                ModeTab(mode, label, selected = mode == vm.route.mode) { vm.route.selectMode(mode) }
-            }
-        }
-
-        Box(Modifier.fillMaxWidth().heightIn(min = 112.dp), contentAlignment = Alignment.CenterStart) {
+        Box(Modifier.fillMaxWidth().heightIn(min = 120.dp), contentAlignment = Alignment.CenterStart) {
             when {
                 vm.route.from == null || vm.route.to == null -> CenterText("Choose where to start and where to go")
                 result == null || result.loading -> Row(
@@ -163,110 +151,145 @@ fun RouteSheetContent(vm: MapViewModel) {
 
         val onFoot = vm.route.mode in setOf(TravelMode.Walk, TravelMode.Bike, TravelMode.Scooter)
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Box(
-                Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).clickable {
-                    if (onFoot) {
-                        vm.pickWaypoint(WaypointSlot.To)
-                    } else {
-                        vm.message = "Leaving now, arriving at ${vm.route.currentVariant?.let { Geo.arrivalText(it.durationSeconds) } ?: "—"}"
-                    }
-                },
-                contentAlignment = Alignment.Center,
-            ) {
-                YIcon(
-                    if (onFoot) R.drawable.ms_add_location_alt else R.drawable.ms_schedule,
-                    if (onFoot) "Change destination" else "Departure time",
-                    tint = yPalette.iconSecondary, size = 26.dp,
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-            val canGo = vm.route.currentVariant?.track != null
-            Box(
+            val canGo = selected != null
+            Row(
                 Modifier
                     .weight(1f)
-                    .height(48.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .height(56.dp)
+                    .clip(RoundedCornerShape(16.dp))
                     .background(if (canGo) yPalette.accent else yPalette.accent.copy(alpha = 0.4f))
-                    .clickable(enabled = vm.route.currentVariant != null) { vm.nav.start() },
-                contentAlignment = Alignment.Center,
+                    .clickable(enabled = canGo, role = Role.Button) { vm.nav.start() },
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(if (onFoot) "Let's go" else "Go", color = Color.White, style = MaterialTheme.typography.labelLarge)
+                YIcon(R.drawable.ms_navigation, null, tint = yPalette.onAccent, size = 22.dp)
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    if (onFoot) "Let's go" else "Go",
+                    color = yPalette.onAccent,
+                    style = MaterialTheme.typography.titleMedium,
+                )
             }
-            Spacer(Modifier.width(8.dp))
             Box(
-                Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).clickable { vm.layersOpen = true },
+                Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(yPalette.accentSoft)
+                    .clickable(enabled = canGo, role = Role.Button, onClick = onShare),
                 contentAlignment = Alignment.Center,
             ) {
-                YIcon(R.drawable.ms_tune, "Options", tint = yPalette.iconSecondary, size = 26.dp)
+                YIcon(R.drawable.ms_share, "Share route with friends", tint = yPalette.accent, size = 22.dp)
             }
         }
         Spacer(Modifier.navigationBarsPadding())
     }
 }
 
+/**
+ * Floating card at the top of the route screen: back, From / stops / To fields, "Add stop",
+ * swap, and the travel mode chips under it. [onBottomChanged] gets its bottom edge in px,
+ * so the map fits the route below it.
+ */
 @Composable
-private fun RouteHeader(vm: MapViewModel) {
-    var menu by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        CircleIconButton(R.drawable.ms_arrow_back_ios_new, "Back", onClick = { vm.onBack() }, size = 30.dp)
-        Column(
-            Modifier.weight(1f).padding(horizontal = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+fun RouteTopCard(vm: MapViewModel, onBottomChanged: (Int) -> Unit) {
+    Column(
+        Modifier
+            .windowInsetsPadding(WindowInsets.statusBars)
+            .padding(top = 12.dp)
+            .fillMaxWidth()
+            .onGloballyPositioned { onBottomChanged(it.boundsInRoot().bottom.toInt()) },
+    ) {
+        Surface(
+            modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            color = yPalette.sheet,
+            shadowElevation = 4.dp,
         ) {
-            Text(
-                "From: ${vm.route.from?.name ?: "choose a point"}",
-                style = MaterialTheme.typography.bodyLarge,
-                color = yPalette.textSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { vm.pickWaypoint(WaypointSlot.From) },
-            )
-            Row(
-                Modifier.clip(RoundedCornerShape(8.dp)).clickable { vm.pickWaypoint(WaypointSlot.To) },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "To: ${vm.route.to?.name ?: "choose a point"}",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = yPalette.textPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                YIcon(R.drawable.ms_arrow_drop_down, null, tint = yPalette.textPrimary, size = 22.dp)
+            Row(Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 4.dp)) {
+                Box(
+                    Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).clickable { vm.onBack() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    YIcon(R.drawable.ms_arrow_back_ios_new, "Back", tint = yPalette.icon, size = 20.dp)
+                }
+                Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                    WaypointField(vm.route.from?.name, "Choose start", start = true) { vm.pickWaypoint(WaypointSlot.From) }
+                    StopsEditor(vm)
+                    Spacer(Modifier.height(6.dp))
+                    WaypointField(vm.route.to?.name, "Choose destination", start = false) { vm.pickWaypoint(WaypointSlot.To) }
+                    StopActions(vm)
+                }
+                Box(
+                    Modifier.size(44.dp, 94.dp).clip(RoundedCornerShape(14.dp)).clickable { vm.route.swap() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    YIcon(R.drawable.ms_swap_vert, "Swap start and destination", tint = yPalette.textSecondary, size = 22.dp)
+                }
             }
         }
-        Box {
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(TravelMode.entries) { mode ->
+                val r = vm.route.results[mode]
+                val label = when {
+                    r == null -> null
+                    r.loading -> "…"
+                    r.variants.isNotEmpty() -> r.variants.first().durationText
+                    else -> "—"
+                }
+                ModeChip(mode, label, selected = mode == vm.route.mode) { vm.route.selectMode(mode) }
+            }
+        }
+    }
+}
+
+/** Gray 44-dp field: blue dot for the start, ink square for the destination. */
+@Composable
+private fun WaypointField(name: String?, placeholder: String, start: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(yPalette.field)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (start) {
             Box(
-                Modifier.size(36.dp).clip(CircleShape).clickable { menu = true },
+                Modifier
+                    .size(16.dp)
+                    .clip(CircleShape)
+                    .background(yPalette.accentSoft),
                 contentAlignment = Alignment.Center,
             ) {
-                YIcon(R.drawable.ms_more_vert, "More", tint = yPalette.textSecondary, size = 24.dp)
+                Box(Modifier.size(10.dp).clip(CircleShape).background(yPalette.accent))
             }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = yPalette.sheet) {
-                DropdownMenuItem(
-                    text = { Text("Swap", style = MaterialTheme.typography.bodyLarge) },
-                    leadingIcon = { YIcon(R.drawable.ms_swap_vert, null, size = 22.dp) },
-                    onClick = { menu = false; vm.route.swap() },
-                )
-                DropdownMenuItem(
-                    text = { Text("Change start point", style = MaterialTheme.typography.bodyLarge) },
-                    leadingIcon = { YIcon(R.drawable.ms_my_location, null, size = 22.dp) },
-                    onClick = { menu = false; vm.pickWaypoint(WaypointSlot.From) },
-                )
-            }
+        } else {
+            Box(Modifier.padding(3.dp).size(10.dp).clip(RoundedCornerShape(3.dp)).background(yPalette.textPrimary))
         }
+        Spacer(Modifier.width(10.dp))
+        Text(
+            name ?: placeholder,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = if (!start && name != null) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (name != null) yPalette.textPrimary else yPalette.textSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
 /**
  * Stops on the way, under the header: "1 Bazaar", "2 Pharmacy"... Tap a stop to change it,
  * drag the handle to reorder, × to remove; then "+ Add stop" and "Optimize order".
- * Every row is [STOP_ROW_DP] high; the sheet height in MapScreen counts on that.
+ * Every row is [STOP_ROW_DP] high; the drag maths counts on that.
  */
 @Composable
 private fun StopsEditor(vm: MapViewModel) {
@@ -278,7 +301,7 @@ private fun StopsEditor(vm: MapViewModel) {
     var dragOffset by remember { mutableFloatStateOf(0f) }
     var moved by remember { mutableStateOf(false) }
 
-    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 4.dp)) {
+    Column(Modifier.fillMaxWidth().padding(start = 4.dp, top = 2.dp)) {
         if (stops.isNotEmpty()) {
             Column(
                 Modifier.fillMaxWidth().pointerInput(Unit) {
@@ -355,28 +378,34 @@ private fun StopsEditor(vm: MapViewModel) {
                 }
             }
         }
-        Row(
-            Modifier.fillMaxWidth().height(STOP_ROW_DP.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (stops.size < RouteController.MAX_STOPS) {
-                Row(
-                    Modifier.clip(RoundedCornerShape(10.dp)).clickable { vm.route.addStop() }.padding(horizontal = 4.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    YIcon(R.drawable.ms_add, null, tint = yPalette.accent, size = 22.dp)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Add stop", style = MaterialTheme.typography.labelLarge, color = yPalette.accent)
-                }
+    }
+}
+
+/** "+ Add stop" on the left, "Optimize order" / "Undo order" on the right. */
+@Composable
+private fun StopActions(vm: MapViewModel) {
+    val stops = vm.route.stops
+    Row(
+        Modifier.fillMaxWidth().height(STOP_ROW_DP.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (stops.size < RouteController.MAX_STOPS) {
+            Row(
+                Modifier.clip(RoundedCornerShape(10.dp)).clickable { vm.route.addStop() }.padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                YIcon(R.drawable.ms_add, null, tint = yPalette.accent, size = 18.dp)
+                Spacer(Modifier.width(6.dp))
+                Text("Add stop", style = MaterialTheme.typography.labelMedium, color = yPalette.accent)
             }
-            Spacer(Modifier.weight(1f))
-            when {
-                vm.route.optimizing -> CircularProgressIndicator(
-                    Modifier.padding(end = 12.dp).size(20.dp), strokeWidth = 2.dp, color = yPalette.accent,
-                )
-                vm.route.stopsBeforeOptimize != null -> TextAction("Undo order") { vm.route.undoOptimize() }
-                stops.size >= 2 -> TextAction("Optimize order") { vm.route.optimizeOrder() }
-            }
+        }
+        Spacer(Modifier.weight(1f))
+        when {
+            vm.route.optimizing -> CircularProgressIndicator(
+                Modifier.padding(end = 12.dp).size(20.dp), strokeWidth = 2.dp, color = yPalette.accent,
+            )
+            vm.route.stopsBeforeOptimize != null -> TextAction("Undo order") { vm.route.undoOptimize() }
+            stops.size >= 2 -> TextAction("Optimize order") { vm.route.optimizeOrder() }
         }
     }
 }
@@ -385,9 +414,9 @@ private fun StopsEditor(vm: MapViewModel) {
 private fun TextAction(text: String, onClick: () -> Unit) {
     Text(
         text,
-        style = MaterialTheme.typography.labelLarge,
+        style = MaterialTheme.typography.labelMedium,
         color = yPalette.accent,
-        modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 6.dp),
+        modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 8.dp),
     )
 }
 
@@ -395,7 +424,7 @@ private fun TextAction(text: String, onClick: () -> Unit) {
 @Composable
 private fun StopBadge(number: Int) {
     Box(
-        Modifier.size(24.dp).clip(CircleShape).background(Color(0xFF196DFF)),
+        Modifier.size(24.dp).clip(CircleShape).background(YColors.Blue),
         contentAlignment = Alignment.Center,
     ) {
         Text(number.toString(), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
@@ -434,71 +463,88 @@ private fun NextStopLine(vm: MapViewModel, progress: NavProgress) {
 /** Height of one stop row and of the "+ Add stop" row; MapScreen sizes the sheet by it. */
 private const val STOP_ROW_DP = 40
 
+/** Floating travel mode chip: ink when selected, white otherwise, with the best time. */
 @Composable
-private fun ModeTab(mode: TravelMode, label: String?, selected: Boolean, onClick: () -> Unit) {
-    val fg = if (selected) Color.White else yPalette.iconSecondary
-    Row(
-        Modifier
-            .height(40.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (selected) yPalette.accent else Color.Transparent)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+private fun ModeChip(mode: TravelMode, label: String?, selected: Boolean, onClick: () -> Unit) {
+    val fg = if (selected) yPalette.onChipSelected else yPalette.textPrimary
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = if (selected) yPalette.chipSelected else yPalette.button,
+        shadowElevation = 4.dp,
     ) {
-        YIcon(mode.iconRes(), mode.title, tint = fg, size = 22.dp)
-        if (label != null) {
-            Spacer(Modifier.width(8.dp))
-            Text(
-                label,
-                color = if (selected) Color.White else yPalette.textPrimary,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Normal,
-                maxLines = 1,
-            )
+        Row(
+            Modifier.height(40.dp).padding(start = 12.dp, end = if (label != null) 14.dp else 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            YIcon(mode.iconRes(), mode.title, tint = fg, size = 18.dp)
+            if (label != null) {
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    label,
+                    color = fg,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
 
+/** Shared frame of a route option: soft blue with a blue outline when selected, gray otherwise. */
+@Composable
+private fun variantModifier(selected: Boolean, onClick: () -> Unit): Modifier {
+    val shape = RoundedCornerShape(18.dp)
+    return Modifier
+        .height(96.dp)
+        .clip(shape)
+        .background(if (selected) yPalette.accentSoft else yPalette.field)
+        .then(if (selected) Modifier.border(2.dp, yPalette.accent, shape) else Modifier)
+        .clickable(onClick = onClick)
+        .padding(horizontal = 14.dp, vertical = 12.dp)
+}
+
+/** "18 min / 7.4 km · arrive 18:42 / ● Fastest". */
 @Composable
 private fun VariantCard(variant: RouteVariant, index: Int, selected: Boolean, mode: TravelMode, onClick: () -> Unit) {
     if (mode == TravelMode.Transit) {
         TransitCard(variant, selected, onClick)
         return
     }
-    val bg = if (selected) yPalette.accent else yPalette.field
-    val primary = if (selected) Color.White else yPalette.textPrimary
-    val secondary = if (selected) Color.White.copy(alpha = 0.75f) else yPalette.textSecondary
+    val p = yPalette
     Column(
-        Modifier
-            .widthIn(min = 112.dp, max = 170.dp)
-            .height(96.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(bg)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+        variantModifier(selected, onClick).widthIn(min = 140.dp, max = 190.dp),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(
-            when {
-                index == 0 -> "Fast"
-                variant.hasIncidents -> "Road closures"
-                else -> "Alternative"
-            },
-            color = secondary,
-            style = MaterialTheme.typography.bodyMedium,
+            variant.durationText,
+            color = p.textPrimary,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+            maxLines = 1,
+        )
+        Text(
+            listOfNotNull(variant.distanceText, "arrive ${Geo.arrivalText(variant.durationSeconds)}").joinToString(" · "),
+            color = p.textSecondary,
+            style = MaterialTheme.typography.bodySmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Text(variant.durationText, color = primary, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        run {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(variant.distanceText.orEmpty(), color = secondary, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
-                if (variant.hasIncidents) {
-                    Spacer(Modifier.width(6.dp))
-                    YIcon(R.drawable.ms_car_crash, "Accidents or closures", tint = if (selected) Color.White else YColors.Red, size = 18.dp)
-                }
+        val (tag, color) = when {
+            variant.hasIncidents -> "Road closures" to p.onDangerSoft
+            index == 0 -> "Fastest" to p.onSuccessSoft
+            else -> "Alternative" to p.textSecondary
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (variant.hasIncidents) {
+                YIcon(R.drawable.ms_car_crash, null, tint = color, size = 14.dp)
+                Spacer(Modifier.width(6.dp))
+            } else if (index == 0) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(color))
+                Spacer(Modifier.width(6.dp))
             }
+            Text(tag, color = color, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, maxLines = 1)
         }
     }
 }
@@ -515,23 +561,17 @@ private fun vehicleIcon(type: String?): Int = when (type) {
 @Composable
 private fun TransitCard(variant: RouteVariant, selected: Boolean, onClick: () -> Unit) {
     Column(
-        Modifier
-            .widthIn(min = 120.dp, max = 300.dp)
-            .height(96.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(if (selected) yPalette.accent else yPalette.field)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+        variantModifier(selected, onClick).widthIn(min = 140.dp, max = 300.dp),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(
             variant.durationText,
-            color = if (selected) Color.White else yPalette.textPrimary,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
+            color = yPalette.textPrimary,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
             maxLines = 1,
         )
-        TransitLegsRow(variant, onBlue = selected)
+        TransitLegsRow(variant, onBlue = false)
     }
 }
 
@@ -566,12 +606,12 @@ private fun TransitLegsRow(variant: RouteVariant, onBlue: Boolean) {
 private fun VehicleBadge(vehicle: String?, onBlue: Boolean) {
     if (vehicle == "underground") {
         Box(
-            Modifier.size(22.dp).clip(RoundedCornerShape(5.dp)).background(if (onBlue) Color.White else Color(0xFF1E7BFF)),
+            Modifier.size(22.dp).clip(RoundedCornerShape(5.dp)).background(if (onBlue) Color.White else YColors.Blue),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 "M",
-                color = if (onBlue) Color(0xFF1E7BFF) else Color.White,
+                color = if (onBlue) YColors.Blue else Color.White,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
                 style = MaterialTheme.typography.labelSmall,
@@ -734,10 +774,10 @@ fun EventChip(event: RouteEvent, meters: Double, modifier: Modifier = Modifier) 
             event.limitKmh?.let { limit ->
                 Spacer(Modifier.width(6.dp))
                 Box(
-                    Modifier.size(28.dp).background(Color.White, CircleShape).border(3.dp, Color(0xFFE24742), CircleShape),
+                    Modifier.size(28.dp).background(Color.White, CircleShape).border(3.dp, YColors.Red, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(limit.toString(), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF21201F))
+                    Text(Geo.speed(limit).toString(), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = YColors.Ink)
                 }
             }
             Spacer(Modifier.width(8.dp))
@@ -759,7 +799,7 @@ fun SpeedBadges(vm: MapViewModel, modifier: Modifier = Modifier) {
         Surface(shape = CircleShape, color = yPalette.sheet, shadowElevation = 4.dp, modifier = Modifier.size(64.dp)) {
             Box(contentAlignment = Alignment.Center) {
                 Text(
-                    progress.speedKmh.toString(),
+                    Geo.speed(progress.speedKmh).toString(),
                     fontSize = 26.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = if (over) YColors.Red else yPalette.textPrimary,
@@ -770,14 +810,14 @@ fun SpeedBadges(vm: MapViewModel, modifier: Modifier = Modifier) {
         if (limit != null) {
             Surface(shape = CircleShape, color = Color.White, shadowElevation = 4.dp, modifier = Modifier.size(64.dp)) {
                 Box(
-                    Modifier.border(6.dp, Color(0xFFE24742), CircleShape),
+                    Modifier.border(6.dp, YColors.Red, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        limit.toString(),
+                        Geo.speed(limit).toString(),
                         fontSize = 24.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF21201F),
+                        color = YColors.Ink,
                         style = MaterialTheme.typography.titleLarge,
                     )
                 }
@@ -939,6 +979,6 @@ private fun RouteProgressBar(track: NavTrack?, fraction: Float) {
             lineTo(px - 4.dp.toPx(), top + barH + 1.dp.toPx())
             close()
         }
-        drawPath(arrow, Color(0xFFF2A900))
+        drawPath(arrow, YColors.Yellow)
     }
 }

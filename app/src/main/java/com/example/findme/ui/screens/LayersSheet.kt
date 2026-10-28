@@ -21,8 +21,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -35,6 +33,8 @@ import androidx.compose.ui.unit.dp
 import com.example.findme.data.MapLayerType
 import com.example.findme.data.NightMode
 import com.example.findme.ui.MapViewModel
+import com.example.findme.ui.components.SegmentedControl
+import com.example.findme.ui.components.YSwitch
 import com.example.findme.ui.theme.yPalette
 
 /** "Layers": map type, traffic and night mode. */
@@ -73,11 +73,7 @@ fun LayersSheet(vm: MapViewModel) {
                 Icon(Icons.Filled.Traffic, null, tint = yPalette.icon)
                 Spacer(Modifier.width(16.dp))
                 Text("Traffic", style = MaterialTheme.typography.bodyLarge, color = yPalette.textPrimary, modifier = Modifier.weight(1f))
-                Switch(
-                    checked = vm.trafficOn,
-                    onCheckedChange = { vm.toggleTraffic() },
-                    colors = SwitchDefaults.colors(checkedTrackColor = yPalette.accent),
-                )
+                YSwitch(vm.trafficOn, onChange = null)
             }
             Text(
                 "Dark theme",
@@ -85,30 +81,12 @@ fun LayersSheet(vm: MapViewModel) {
                 color = yPalette.textPrimary,
                 modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 8.dp),
             )
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(yPalette.field)
-                    .padding(3.dp),
-            ) {
-                NightMode.entries.forEach { mode ->
-                    val selected = vm.nightMode == mode
-                    Text(
-                        mode.title,
-                        color = yPalette.textPrimary,
-                        style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (selected) yPalette.sheet else Color.Transparent)
-                            .clickable { vm.nightMode = mode }
-                            .padding(vertical = 10.dp),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    )
-                }
-            }
+            SegmentedControl(
+                NightMode.entries.map { it.title },
+                NightMode.entries.indexOf(vm.nightMode),
+                { vm.nightMode = NightMode.entries[it] },
+                Modifier.padding(horizontal = 16.dp),
+            )
         }
     }
 }

@@ -22,6 +22,7 @@ import com.yandex.mapkit.Time
 import com.yandex.mapkit.RequestPointType
 import com.yandex.mapkit.directions.DirectionsFactory
 import com.yandex.mapkit.directions.driving.Action
+import com.yandex.mapkit.directions.driving.AvoidanceFlags
 import com.yandex.mapkit.directions.driving.DrivingSummarySession
 import com.yandex.mapkit.directions.driving.Summary
 import com.yandex.mapkit.directions.driving.DrivingOptions
@@ -48,7 +49,13 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /** Builds routes for every travel mode with MapKit routers. */
-class RouteService {
+/** Roads to keep off, from the settings. */
+data class RouteAvoid(val tolls: Boolean = false, val unpaved: Boolean = false)
+
+class RouteService(
+    /** Read at each request, so a changed setting counts from the next route. */
+    private val avoid: () -> RouteAvoid = { RouteAvoid() },
+) {
     private val drivingRouter =
         DirectionsFactory.getInstance().createDrivingRouter(DrivingRouterType.COMBINED)
     private val transport = TransportFactory.getInstance()
@@ -96,7 +103,7 @@ class RouteService {
                 RequestPoint(from, RequestPointType.WAYPOINT, null, null, null),
                 RequestPoint(to, RequestPointType.WAYPOINT, null, null, null),
             ),
-            DrivingOptions().setRoutesCount(1),
+            drivingOptions(1),
             VehicleOptions(),
             listener,
         )
@@ -136,7 +143,7 @@ class RouteService {
             listeners[mode] = listener
             drivingSessions[mode] = drivingRouter.requestRoutes(
                 points,
-                DrivingOptions().setRoutesCount(3),
+                drivingOptions(3),
                 VehicleOptions(),
                 listener,
             )
@@ -191,6 +198,13 @@ class RouteService {
             best
         }
         return copy(stopSegments = segments)
+    }
+
+    private fun drivingOptions(routes: Int): DrivingOptions {
+        val a = avoid()
+        return DrivingOptions()
+            .setRoutesCount(routes)
+            .setAvoidanceFlags(AvoidanceFlags().setAvoidTolls(a.tolls).setAvoidUnpaved(a.unpaved))
     }
 
     private fun emptyError(routes: List<*>) = if (routes.isEmpty()) "No route found" else null

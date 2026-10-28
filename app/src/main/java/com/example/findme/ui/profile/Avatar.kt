@@ -1,5 +1,6 @@
 package com.example.findme.ui.profile
 
+import com.example.findme.ui.theme.YColors
 import android.graphics.BitmapFactory
 import android.util.Log
 import android.util.LruCache
@@ -52,10 +53,7 @@ fun Avatar(user: UserProfile, size: Dp, modifier: Modifier = Modifier) {
     }
 }
 
-private val AvatarColors = listOf(
-    Color(0xFF196DFF), Color(0xFF2FA84F), Color(0xFFE0922F), Color(0xFF8E44AD),
-    Color(0xFFFA453A), Color(0xFF00897B), Color(0xFF5C6BC0), Color(0xFFD81B60),
-)
+private val AvatarColors = YColors.Friends
 
 fun avatarColor(uid: String): Color = AvatarColors[Math.floorMod(uid.hashCode(), AvatarColors.size)]
 

@@ -1,5 +1,6 @@
 package com.example.findme.ui.nav
 
+import com.example.findme.data.Geo
 import com.example.findme.data.LegKind
 import com.example.findme.data.Maneuver
 import com.example.findme.data.RoadEventKind
@@ -121,6 +122,19 @@ class VoicePrompterTest {
             "Accident ahead",
             p.event(progress(Maneuver.Straight, 900.0).copy(event = crash, eventInMeters = 200.0), 10.0),
         )
+    }
+
+    @Test
+    fun `distance words in miles`() {
+        Geo.imperialSource = { true }
+        try {
+            assertEquals("500 feet", VoicePrompter.distanceWords(150.0))
+            assertEquals("0.3 miles", VoicePrompter.distanceWords(480.0))
+            assertEquals("1 mile", VoicePrompter.distanceWords(1_700.0))
+            assertEquals("1.5 miles", VoicePrompter.distanceWords(2_400.0))
+        } finally {
+            Geo.imperialSource = { false }
+        }
     }
 
     @Test

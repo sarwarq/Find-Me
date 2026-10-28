@@ -16,6 +16,7 @@ import com.example.findme.data.Place
 import com.example.findme.data.SavedNav
 import com.example.findme.data.SavedPlace
 import com.example.findme.data.SavedPlacesStore
+import com.example.findme.data.SettingsStore
 import com.example.findme.data.SuggestUi
 import com.example.findme.data.TrafficInfo
 import com.example.findme.data.Waypoint
@@ -83,6 +84,8 @@ class MapViewModel(
     private val location: LocationRepository,
     /** Spoken guidance, and its sound button. */
     val voice: Voice,
+    /** Theme, units, what guidance says. */
+    val settings: SettingsStore,
 ) : ViewModel() {
 
     val commands = MutableSharedFlow<MapCommand>(extraBufferCapacity = 16)
@@ -99,6 +102,7 @@ class MapViewModel(
         say = { message = it },
         speak = voice::speak,
         beep = voice::beep,
+        settings = settings,
     )
 
     // ---------- Navigation between screens ----------
@@ -131,7 +135,12 @@ class MapViewModel(
     var trafficOn by mutableStateOf(false); private set
     var trafficInfo by mutableStateOf<TrafficInfo?>(null)
     var mapLayer by mutableStateOf(MapLayerType.Scheme)
-    var nightMode by mutableStateOf(NightMode.Auto)
+    // The theme lives in the settings, so it is remembered between launches.
+    var nightMode: NightMode
+        get() = settings.nightMode
+        set(value) {
+            settings.nightMode = value
+        }
 
     // ---------- Saved places ----------
 
@@ -258,7 +267,9 @@ class MapViewModel(
                 }
             }
 
-            else -> submitSearch(item.searchText ?: s.title)
+            // Rubric suggestions carry a JSON query; searching by their name finds the same
+            // places and keeps the history and the top bar readable.
+            else -> submitSearch(item.searchText?.takeUnless { it.trimStart().startsWith("{") } ?: s.title)
         }
     }
 

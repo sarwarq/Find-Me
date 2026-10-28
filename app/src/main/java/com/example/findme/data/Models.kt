@@ -147,7 +147,11 @@ data class RoadLane(val arrows: List<LaneArrow>, val take: LaneArrow?, val speci
 data class LaneSignPoint(val segment: Int, val t: Double, val lanes: List<RoadLane>)
 
 /** What a road event on the route is. */
-enum class RoadEventKind { SpeedCamera, LaneCamera, Camera, Police, Accident, Works, Closed, Danger, School }
+enum class RoadEventKind {
+    SpeedCamera, LaneCamera, Camera, Police, Accident, Works, Closed, Danger, School;
+
+    val isCamera: Boolean get() = this == SpeedCamera || this == LaneCamera || this == Camera
+}
 
 /** A camera, accident, road works... on the route at [segment] / [t]. */
 data class RouteEvent(

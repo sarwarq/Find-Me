@@ -40,7 +40,8 @@ class MainActivity : ComponentActivity() {
             val dark = vm.isDark(isSystemInDarkTheme())
             DisposableEffect(dark) {
                 val style = if (dark) {
-                    SystemBarStyle.dark(Color.WHITE)
+                    // Night sheet color (DarkPalette.sheet), so the light icons stay readable.
+                    SystemBarStyle.dark(0xFF151A23.toInt())
                 } else {
                     SystemBarStyle.light(Color.WHITE, Color.WHITE)
                 }

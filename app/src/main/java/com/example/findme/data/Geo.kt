@@ -53,11 +53,35 @@ object Geo {
         return Point(a.latitude + (b.latitude - a.latitude) * t, a.longitude + (b.longitude - a.longitude) * t)
     }
 
-    fun formatDistance(meters: Double): String = when {
-        meters < 1000 -> "${(meters / 10).roundToInt() * 10} m"
-        meters < 10_000 -> String.format(Locale.US, "%.1f km", meters / 1000)
-        else -> "${(meters / 1000).roundToInt()} km"
+    /** Miles instead of kilometers (the Units setting); read on every call, so screens follow it. */
+    var imperialSource: () -> Boolean = { false }
+    val imperial: Boolean get() = imperialSource()
+
+    /** "850 m", "2.4 km", "12 km"; in miles "500 ft", "1.5 mi", "12 mi". */
+    fun formatDistance(meters: Double): String {
+        if (imperial) {
+            val miles = meters / METERS_PER_MILE
+            return when {
+                miles < 0.1 -> "${((meters * FEET_PER_METER) / 50).roundToInt() * 50} ft"
+                miles < 10 -> String.format(Locale.US, "%.1f mi", miles)
+                else -> "${miles.roundToInt()} mi"
+            }
+        }
+        return when {
+            meters < 1000 -> "${(meters / 10).roundToInt() * 10} m"
+            meters < 10_000 -> String.format(Locale.US, "%.1f km", meters / 1000)
+            else -> "${(meters / 1000).roundToInt()} km"
+        }
     }
+
+    /** A speed in km/h shown in the chosen units: km/h or mph. */
+    fun speed(kmh: Int): Int = if (imperial) (kmh / KM_PER_MILE).roundToInt() else kmh
+
+    val speedUnit: String get() = if (imperial) "mph" else "km/h"
+
+    const val METERS_PER_MILE = 1609.344
+    const val KM_PER_MILE = 1.609344
+    const val FEET_PER_METER = 3.28084
 
     fun distanceText(from: Point?, to: Point): String? =
         from?.let { formatDistance(distanceMeters(it, to)) }
@@ -122,12 +146,8 @@ object Geo {
         }
     }
 
-    /** Distance for the navigation panel: "850 m", "10 km". */
-    fun shortDistance(meters: Double): String = when {
-        meters < 1000 -> "${(meters / 10).roundToInt() * 10} m"
-        meters < 10_000 -> String.format(Locale.US, "%.1f km", meters / 1000)
-        else -> "${(meters / 1000).roundToInt()} km"
-    }
+    /** Distance for the navigation panel: "850 m", "10 km" (the same as [formatDistance]). */
+    fun shortDistance(meters: Double): String = formatDistance(meters)
 
     fun coordinatesText(lat: Double, lon: Double): String =
         String.format(Locale.US, "%.6f, %.6f", lat, lon)

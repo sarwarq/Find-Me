@@ -155,7 +155,7 @@ fun YSheet(
                     onDragStarted = { state.stopAnimation() },
                     onDragStopped = { velocity -> state.settle(velocity) },
                 ),
-            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             color = yPalette.sheet,
             shadowElevation = 16.dp,
         ) {

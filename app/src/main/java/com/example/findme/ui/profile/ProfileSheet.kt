@@ -79,7 +79,7 @@ private fun SignedOut(vm: AuthViewModel) {
         Modifier.size(72.dp).clip(CircleShape).background(yPalette.field),
         contentAlignment = Alignment.Center,
     ) {
-        YIcon(R.drawable.ms_person, null, tint = Color(0xFFB9B9B9), size = 52.dp)
+        YIcon(R.drawable.ms_person, null, tint = yPalette.textSecondary, size = 52.dp)
     }
     Spacer(Modifier.height(16.dp))
     Text("Sign in to FindMe", style = MaterialTheme.typography.titleLarge, color = yPalette.textPrimary)
@@ -119,6 +119,9 @@ private fun SignedOut(vm: AuthViewModel) {
             Spacer(Modifier.weight(1f))
         }
     }
+    Spacer(Modifier.height(16.dp))
+    HorizontalDivider(color = yPalette.divider)
+    SettingsRow(vm)
 }
 
 @Composable
@@ -142,6 +145,7 @@ private fun SignedIn(vm: AuthViewModel, user: UserProfile) {
     Spacer(Modifier.height(16.dp))
     HorizontalDivider(color = yPalette.divider)
     ProfileRow(R.drawable.ms_edit, "Edit name", "Friends see this name in meetings") { renaming = true }
+    SettingsRow(vm)
     ProfileRow(R.drawable.ms_logout, "Sign out", tint = YColors.Red) {
         vm.signOut(context)
     }
@@ -155,6 +159,15 @@ private fun SignedIn(vm: AuthViewModel, user: UserProfile) {
                 renaming = false
             },
         )
+    }
+}
+
+/** Opens the settings in place of the profile. */
+@Composable
+private fun SettingsRow(vm: AuthViewModel) {
+    ProfileRow(R.drawable.ms_tune, "Settings", "Navigation, map, meet-ups") {
+        vm.profileOpen = false
+        vm.settingsOpen = true
     }
 }
 

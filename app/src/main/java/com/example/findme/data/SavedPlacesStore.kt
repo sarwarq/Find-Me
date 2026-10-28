@@ -40,7 +40,8 @@ class SavedPlacesStore(context: Context) {
         val raw = prefs.getString(KEY_HISTORY, null) ?: return emptyList()
         return runCatching {
             val arr = JSONArray(raw)
-            List(arr.length()) { arr.getString(it) }
+            // Old versions saved raw rubric queries ({"text": ...}); they are not readable.
+            List(arr.length()) { arr.getString(it) }.filterNot { it.startsWith("{") }
         }.getOrDefault(emptyList())
     }
 

@@ -1,5 +1,6 @@
 package com.example.findme.ui.nav
 
+import com.example.findme.data.Geo
 import com.example.findme.data.LegKind
 import com.example.findme.data.Maneuver
 import com.example.findme.data.RoadEventKind
@@ -72,7 +73,7 @@ class VoicePrompter(private val mode: TravelMode) {
         if (e.id in saidEvents) return null
         if (p.eventInMeters > max(EVENT_EARLY_M, (speedMps ?: 0.0) * EVENT_EARLY_S)) return null
         saidEvents += e.id
-        return eventText(e.kind) + if (e.kind == RoadEventKind.SpeedCamera && e.limitKmh != null) ", limit ${e.limitKmh}" else ""
+        return eventText(e.kind) + if (e.kind == RoadEventKind.SpeedCamera && e.limitKmh != null) ", limit ${Geo.speed(e.limitKmh)}" else ""
     }
 
     private fun transit(p: NavProgress, steps: List<TransitStep>): String? {
@@ -122,8 +123,22 @@ class VoicePrompter(private val mode: TravelMode) {
             Maneuver.Finish -> "you will arrive at your destination"
         }
 
+        /** "500 feet", "0.3 miles", "1.5 miles". */
+        private fun imperialWords(meters: Double): String {
+            val miles = meters / Geo.METERS_PER_MILE
+            if (miles < 0.1) return "${((meters * Geo.FEET_PER_METER / 100).roundToInt() * 100).coerceAtLeast(100)} feet"
+            if (miles < 1) return "${(miles * 10).roundToInt() / 10.0} miles"
+            val half = (miles * 2).roundToInt() / 2.0
+            return when {
+                half == 1.0 -> "1 mile"
+                half % 1.0 == 0.0 -> "${half.toInt()} miles"
+                else -> "$half miles"
+            }
+        }
+
         /** "300 meters", "1.5 kilometers": rounded the way people say it. */
         fun distanceWords(meters: Double): String {
+        if (Geo.imperial) return imperialWords(meters)
             val step = if (meters < 200) 50 else 100
             val m = ((meters / step).roundToInt() * step).coerceAtLeast(50)
             if (m < 1000) return "$m meters"

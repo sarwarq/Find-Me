@@ -1,8 +1,15 @@
 package com.example.findme.ui.components
 
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -66,15 +73,16 @@ val Categories = listOf(
     Category("Fitness", R.drawable.ms_fitness_center),
 )
 
-/** Short rubric row on the main sheet. */
+/** Chip row on the main sheet. */
 val QuickCategories = listOf(
+    Category("Coffee", R.drawable.ms_local_cafe, "Cafes"),
     Category("Restaurants", R.drawable.ms_restaurant),
+    Category("Gas", R.drawable.ms_local_gas_station, "Gas stations"),
+    Category("Pharmacy", R.drawable.ms_local_pharmacy, "Pharmacies"),
     Category("Groceries", R.drawable.ms_shopping_basket),
-    Category("Pharmacies", R.drawable.ic_cross),
+    Category("Transport", R.drawable.ms_directions_bus, "Public transport stops"),
     Category("ATMs", R.drawable.ms_local_atm),
-    Category("Cafes", R.drawable.ms_local_cafe),
     Category("Hotels", R.drawable.ms_hotel),
-    Category("Shopping malls", R.drawable.ms_local_mall),
 )
 
 @Composable
@@ -95,7 +103,7 @@ fun Grabber() {
             Modifier
                 .size(width = 36.dp, height = 4.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(yPalette.textSecondary.copy(alpha = 0.3f))
+                .background(yPalette.grabber)
         )
     }
 }
@@ -106,7 +114,7 @@ fun MapButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     size: Dp = 48.dp,
-    shape: Shape = RoundedCornerShape(14.dp),
+    shape: Shape = RoundedCornerShape(16.dp),
     content: @Composable BoxScope.() -> Unit,
 ) {
     Surface(
@@ -114,7 +122,7 @@ fun MapButton(
         modifier = modifier.size(size),
         shape = shape,
         color = yPalette.button,
-        shadowElevation = 3.dp,
+        shadowElevation = 4.dp,
     ) {
         Box(contentAlignment = Alignment.Center, content = content)
     }
@@ -130,9 +138,9 @@ fun MapPill(
     Surface(
         onClick = onClick,
         modifier = modifier.height(48.dp),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         color = yPalette.button,
-        shadowElevation = 3.dp,
+        shadowElevation = 4.dp,
     ) {
         Row(
             Modifier.padding(horizontal = 14.dp),
@@ -142,9 +150,9 @@ fun MapPill(
     }
 }
 
-/** Gray circle with a white cross, the close button of Yandex cards. */
+/** Light circle with a gray cross: the close button of cards and sheets. */
 @Composable
-fun CloseCircle(onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 28.dp) {
+fun CloseCircle(onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 32.dp) {
     Box(
         modifier
             .size(size)
@@ -153,7 +161,7 @@ fun CloseCircle(onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 2
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        YIcon(R.drawable.ms_close, "Close", tint = Color.White, size = size * 0.6f)
+        YIcon(R.drawable.ms_close, "Close", tint = yPalette.textSecondary, size = size * 0.55f)
     }
 }
 
@@ -166,7 +174,7 @@ fun CircleIconButton(
     modifier: Modifier = Modifier,
     size: Dp = 32.dp,
     background: Color = yPalette.closeCircle,
-    tint: Color = Color.White,
+    tint: Color = yPalette.icon,
 ) {
     Box(
         modifier
@@ -180,7 +188,10 @@ fun CircleIconButton(
     }
 }
 
-/** Card action button: blue "Directions" or a light-blue secondary one. */
+/**
+ * Card action button: blue primary ("Directions", "Go"), light-blue secondary,
+ * or coral for meet-up actions ("Meet here").
+ */
 @Composable
 fun ActionPill(
     text: String?,
@@ -189,13 +200,22 @@ fun ActionPill(
     primary: Boolean = false,
     modifier: Modifier = Modifier,
     iconTint: Color? = null,
+    coral: Boolean = false,
 ) {
-    val bg = if (primary) yPalette.accent else yPalette.accentSoft
-    val fg = if (primary) yPalette.onAccent else yPalette.accent
+    val bg = when {
+        coral -> yPalette.coral
+        primary -> yPalette.accent
+        else -> yPalette.accentSoft
+    }
+    val fg = when {
+        coral -> yPalette.onCoral
+        primary -> yPalette.onAccent
+        else -> yPalette.accent
+    }
     Row(
         modifier
-            .height(48.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .height(52.dp)
+            .clip(RoundedCornerShape(16.dp))
             .background(bg)
             .clickable(onClick = onClick)
             .padding(horizontal = if (text == null) 16.dp else 18.dp),
@@ -204,7 +224,9 @@ fun ActionPill(
     ) {
         if (icon != null) YIcon(icon, text, tint = iconTint ?: fg, size = 24.dp)
         if (icon != null && text != null) Spacer(Modifier.width(10.dp))
-        if (text != null) Text(text, color = fg, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        if (text != null) {
+            Text(text, color = fg, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 
@@ -219,7 +241,7 @@ fun CategoryTile(category: Category, modifier: Modifier = Modifier, onClick: () 
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
-            Modifier.size(60.dp).clip(CircleShape).background(yPalette.field),
+            Modifier.size(60.dp).clip(RoundedCornerShape(20.dp)).background(yPalette.field),
             contentAlignment = Alignment.Center,
         ) {
             YIcon(category.icon, null, tint = yPalette.iconSecondary, size = 26.dp)
@@ -238,35 +260,70 @@ fun CategoryTile(category: Category, modifier: Modifier = Modifier, onClick: () 
     }
 }
 
-/** Two-segment switch like "Categories | History". */
+/**
+ * Segmented switch like "Categories | History" or "Auto | Day | Night": a gray track with the
+ * chosen segment raised. [fill] stretches it to the full width; otherwise it hugs its labels.
+ */
 @Composable
-fun SegmentedControl(items: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+fun SegmentedControl(
+    items: List<String>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    fill: Boolean = true,
+) {
     Row(
         modifier
-            .fillMaxWidth()
-            .height(44.dp)
+            .then(if (fill) Modifier.fillMaxWidth() else Modifier)
             .clip(RoundedCornerShape(14.dp))
             .background(yPalette.field)
-            .padding(3.dp),
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         items.forEachIndexed { index, title ->
             val isSelected = index == selected
             Box(
                 Modifier
-                    .weight(1f)
-                    .height(38.dp)
-                    .clip(RoundedCornerShape(11.dp))
+                    .then(if (fill) Modifier.weight(1f) else Modifier)
+                    .height(36.dp)
+                    .shadow(if (isSelected) 2.dp else 0.dp, RoundedCornerShape(10.dp))
+                    .clip(RoundedCornerShape(10.dp))
                     .background(if (isSelected) yPalette.selectedTab else Color.Transparent)
-                    .clickable { onSelect(index) },
+                    .selectable(isSelected, role = Role.Tab) { onSelect(index) }
+                    .padding(horizontal = 12.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     title,
-                    style = MaterialTheme.typography.labelLarge,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
                     color = if (isSelected) yPalette.onSelectedTab else yPalette.textSecondary,
+                    maxLines = 1,
                 )
             }
         }
+    }
+}
+
+/**
+ * Pill switch: blue track when on, gray when off, white knob. With [onChange] null it only
+ * shows the state (the whole row is the toggle then).
+ */
+@Composable
+fun YSwitch(checked: Boolean, onChange: ((Boolean) -> Unit)?, modifier: Modifier = Modifier) {
+    val knob by animateDpAsState(if (checked) 20.dp else 0.dp, label = "switch knob")
+    Box(
+        modifier
+            .size(width = 48.dp, height = 28.dp)
+            .clip(CircleShape)
+            .background(if (checked) yPalette.accent else yPalette.grabber)
+            .then(
+                if (onChange != null) Modifier.toggleable(checked, role = Role.Switch, onValueChange = onChange)
+                else Modifier
+            )
+            .padding(3.dp),
+    ) {
+        Box(Modifier.offset(x = knob).size(22.dp).clip(CircleShape).background(Color.White))
     }
 }
 
@@ -305,7 +362,7 @@ fun ListRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            Modifier.size(40.dp).clip(CircleShape).background(iconBackground),
+            Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(iconBackground),
             contentAlignment = Alignment.Center,
         ) {
             YIcon(icon, null, tint = iconTint, size = 22.dp)
@@ -377,3 +434,39 @@ private fun Stars(rating: Float, size: Dp) {
 }
 
 fun ratingsText(count: Int): String = if (count == 1) "1 rating" else "$count ratings"
+
+enum class StatusKind { Success, Warning, Danger, Info, Neutral }
+
+/** Small status badge: "On time", "+7 min", "Arrived", "Not sharing". */
+@Composable
+fun StatusBadge(text: String, kind: StatusKind, modifier: Modifier = Modifier) {
+    val p = yPalette
+    val (bg, fg) = when (kind) {
+        StatusKind.Success -> p.successSoft to p.onSuccessSoft
+        StatusKind.Warning -> p.warningSoft to p.onWarningSoft
+        StatusKind.Danger -> p.dangerSoft to p.onDangerSoft
+        StatusKind.Info -> p.accentSoft to p.accent
+        StatusKind.Neutral -> p.field to p.textSecondary
+    }
+    Text(
+        text,
+        style = MaterialTheme.typography.labelMedium,
+        color = fg,
+        maxLines = 1,
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(bg)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    )
+}
+
+/** Small caps section label above a group ("GUIDANCE", "WHO IS COMING"). */
+@Composable
+fun CapsLabel(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text.uppercase(),
+        style = com.example.findme.ui.theme.CapsLabelStyle,
+        color = yPalette.textSecondary,
+        modifier = modifier,
+    )
+}

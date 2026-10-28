@@ -13,7 +13,7 @@ class OverspeedAlarm(
     private var lastBeep = 0L
 
     /** True when a beep is due now. */
-    fun update(speedKmh: Int, limitKmh: Int?, nowMillis: Long): Boolean {
+    fun update(speedKmh: Int, limitKmh: Int?, nowMillis: Long, overKmh: Int = this.overKmh): Boolean {
         if (limitKmh == null || limitKmh <= 0) {
             over = false
             return false

@@ -67,6 +67,21 @@ class GeoTest {
     }
 
     @Test
+    fun `distances and speeds in miles`() {
+        Geo.imperialSource = { true }
+        try {
+            assertEquals("500 ft", Geo.formatDistance(152.0)) // 499 ft
+            assertEquals("1.2 mi", Geo.formatDistance(1_931.0))
+            assertEquals("15 mi", Geo.formatDistance(24_140.0))
+            assertEquals(37, Geo.speed(60))
+            assertEquals("mph", Geo.speedUnit)
+        } finally {
+            Geo.imperialSource = { false }
+        }
+        assertEquals(60, Geo.speed(60))
+    }
+
+    @Test
     fun `duration text`() {
         assertEquals("1 min", Geo.durationText(10.0))
         assertEquals("21 min", Geo.durationText(21 * 60.0))

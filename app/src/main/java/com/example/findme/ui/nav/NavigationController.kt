@@ -7,6 +7,7 @@ import androidx.compose.runtime.setValue
 import com.example.findme.data.NavStore
 import com.example.findme.data.RouteResult
 import com.example.findme.data.SavedNav
+import com.example.findme.data.SettingsStore
 import com.example.findme.data.TravelMode
 import com.example.findme.data.Waypoint
 import com.example.findme.data.location.LocationFix
@@ -32,6 +33,8 @@ class NavigationController(
     private val speak: (String) -> Unit,
     /** A beep: speeding. */
     private val beep: () -> Unit = {},
+    /** Camera alerts and the speeding margin. */
+    private val settings: SettingsStore? = null,
 ) {
     var active by mutableStateOf(false); private set
     var progress by mutableStateOf<NavProgress?>(null); private set
@@ -165,14 +168,18 @@ class NavigationController(
             speak("You have reached $name")
         }
         if (update.reachedStops.isNotEmpty()) store.updateStops(route.stops.drop(tracker.reachedStops))
-        progress = update.progress
+        // Cameras switched off in the settings are neither shown nor said.
+        val camerasOff = settings?.cameraAlerts == false && update.progress.event?.kind?.isCamera == true
+        val shown = if (camerasOff) update.progress.copy(event = null) else update.progress
+        progress = shown
         if (update.arrived) {
             say("You have arrived")
             speak("You have arrived")
             stop()
             return
         }
-        if (overspeed.update(update.progress.speedKmh, update.progress.limitKmh, SystemClock.elapsedRealtime())) beep()
+        val margin = settings?.speedingMarginKmh ?: 10
+        if (margin > 0 && overspeed.update(shown.speedKmh, shown.limitKmh, SystemClock.elapsedRealtime(), margin)) beep()
         // Transit routes are not rebuilt: a bus does not follow the drawn line exactly.
         if (route.mode != TravelMode.Transit && !rerouting &&
             offRoute.update(update.offRouteMeters, SystemClock.elapsedRealtime())
@@ -183,7 +190,7 @@ class NavigationController(
         // Off the route the distances to the turns mean nothing.
         if (update.offRouteMeters < OFF_ROUTE_M && !rerouting) {
             prompter?.update(update.progress, route.currentVariant?.steps.orEmpty(), speed)?.let(speak)
-            prompter?.event(update.progress, speed)?.let(speak)
+            prompter?.event(shown, speed)?.let(speak)
         }
     }
 

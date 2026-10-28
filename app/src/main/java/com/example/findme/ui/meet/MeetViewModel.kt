@@ -11,6 +11,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.findme.data.Geo
 import com.example.findme.data.NavStore
+import com.example.findme.data.SettingsStore
 import com.example.findme.data.Place
 import com.example.findme.data.auth.UserProfile
 import com.example.findme.data.meet.LiveLocation
@@ -47,6 +48,7 @@ class MeetViewModel(
     private val repo: MeetingRepository,
     private val navStore: NavStore,
     private val location: LocationRepository,
+    private val settings: SettingsStore,
 ) : AndroidViewModel(app) {
 
     var user by mutableStateOf<UserProfile?>(null); private set
@@ -215,6 +217,11 @@ class MeetViewModel(
         editor = MeetEditor.New(place)
     }
 
+    /** "New meet-up" on the map: after sign-in the user picks the place first. */
+    fun newFromMap(choosePlace: () -> Unit) {
+        if (requireSignIn()) choosePlace()
+    }
+
     fun startEdit(meeting: Meeting) {
         editor = MeetEditor.Edit(meeting)
     }
@@ -252,6 +259,24 @@ class MeetViewModel(
 
     // ---------- Live map & sharing ----------
 
+    /** Who had arrived at the last update; null before the first one of this meeting. */
+    private var arrivedBefore: Set<String>? = null
+
+    /** New positions; a friend who has just arrived gets a notification (if the setting is on). */
+    private fun onLocations(new: Map<String, LiveLocation>) {
+        locations = new
+        val arrived = new.values.filter { it.arrived }.mapTo(HashSet()) { it.uid }
+        val before = arrivedBefore
+        arrivedBefore = arrived
+        // Those already there when the meeting opened are not news.
+        if (before == null || !settings.friendArrived) return
+        val meeting = mapMeeting ?: return
+        (arrived - before).filter { it != user?.uid }.forEach { uid ->
+            val name = meeting.members.firstOrNull { it.uid == uid }?.name ?: return@forEach
+            FriendArrivedNotifier.notify(getApplication(), uid, name.substringBefore(' '), meeting.placeName)
+        }
+    }
+
     /** Draws the meeting's members (and the routes they drive) on the map and keeps them updated. */
     fun showOnMap(meetingId: String) {
         if (mapMeetingId == meetingId) return
@@ -260,7 +285,8 @@ class MeetViewModel(
         locations = emptyMap()
         routes = emptyMap()
         mapMeetingId = meetingId
-        stopLocations = repo.observeLocations(meetingId) { locations = it }
+        arrivedBefore = null
+        stopLocations = repo.observeLocations(meetingId) { onLocations(it) }
         stopRoutes = repo.observeRoutes(meetingId) { list ->
             routes = list
             // Drop decoded lines nobody drives any more.
