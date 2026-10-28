@@ -1,0 +1,17 @@
+[
+  { "types": "polygon", "elements": "geometry.fill", "stylers": { "color": "#141922" } },
+  { "types": "polygon", "tags": { "any": ["land", "landscape", "urban_area", "residential", "industrial", "construction_site", "parking", "terrain"] }, "elements": "geometry.fill", "stylers": { "color": "#141922" } },
+  { "types": "polygon", "tags": { "any": ["vegetation", "park", "national_park", "cemetery", "sports_ground"] }, "elements": "geometry.fill", "stylers": { "color": "#18291F" } },
+  { "types": "polygon", "tags": { "all": ["water"] }, "elements": "geometry.fill", "stylers": { "color": "#10233A" } },
+  { "types": "polygon", "tags": { "all": ["building"] }, "elements": "geometry.fill", "stylers": { "color": "#1B212C" } },
+  { "types": "polygon", "tags": { "all": ["building"] }, "elements": "geometry.outline", "stylers": { "color": "#222935" } },
+  { "types": "polyline", "tags": { "all": ["road"], "none": ["path", "crosswalk", "road_marking", "ferry"] }, "elements": "geometry.fill", "stylers": { "color": "#252C39" } },
+  { "types": "polyline", "tags": { "any": ["road_1", "road_2", "road_3", "road_4"] }, "elements": "geometry.fill", "stylers": { "color": "#323B4D" } },
+  { "types": "polyline", "tags": { "all": ["road"], "none": ["path", "crosswalk", "road_marking", "ferry"] }, "elements": "geometry.outline", "stylers": { "color": "#0E1117" } },
+  { "elements": "label.text.fill", "stylers": { "color": "#A4ADBB" } },
+  { "elements": "label.text.outline", "stylers": { "color": "#141922" } },
+  { "tags": { "all": ["road"] }, "elements": "label.text.fill", "stylers": { "color": "#7D8798" } },
+  { "tags": { "any": ["park", "vegetation", "national_park"] }, "elements": "label.text.fill", "stylers": { "color": "#6FA67E" } },
+  { "tags": { "all": ["water"] }, "elements": "label.text.fill", "stylers": { "color": "#6E95C4" } },
+  { "tags": { "all": ["admin"] }, "elements": "label.text.fill", "stylers": { "color": "#F1F4F9" } }
+]

@@ -191,6 +191,7 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
             MapLayerType.Hybrid -> MapType.HYBRID
         }
         map.isNightModeEnabled = dark
+        applyStyle(if (type == MapLayerType.Scheme) dark else null)
         trafficLayer.isTrafficVisible = traffic
         if (dark != darkMap) {
             darkMap = dark
@@ -198,6 +199,29 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
             navArrow?.takeIf { it.isValid }?.let(::setArrowIcon)
         }
     }
+
+    /** The map style now applied: true night, false day, null none (satellite). */
+    private var appliedStyle: Boolean? = null
+    private var styleApplied = false
+
+    /**
+     * Our own colors for land, parks, water, buildings, roads and labels (res/raw/map_style_*.json),
+     * matching the app's day and night palettes; [dark] null clears them for satellite views.
+     */
+    private fun applyStyle(dark: Boolean?) {
+        if (styleApplied && appliedStyle == dark) return
+        val json = when (dark) {
+            null -> "[]"
+            true -> rawText(R.raw.map_style_night)
+            false -> rawText(R.raw.map_style_day)
+        }
+        if (!map.setMapStyle(json)) android.util.Log.w("MapEngine", "Map style was rejected")
+        appliedStyle = dark
+        styleApplied = true
+    }
+
+    private fun rawText(res: Int): String =
+        context.resources.openRawResource(res).bufferedReader().use { it.readText() }
 
     /** Scale ruler: meters per view pixel at the center of the map. */
     private fun updateScale() {
