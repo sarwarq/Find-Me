@@ -59,7 +59,8 @@ jobs:
 
       - name: Test and build
         run: |
-          ./gradlew :app:testReleaseUnitTest :app:assembleRelease \
+          # AGP 9 has unit tests for the debug build type only.
+          ./gradlew :app:testDebugUnitTest :app:assembleRelease \
             -Pfindme.version="${GITHUB_REF_NAME#v}" \
             -Pfindme.updateRepo="$GITHUB_REPOSITORY"
 
