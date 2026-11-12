@@ -24,6 +24,15 @@ val appVersionCode: Int = releaseVersion?.let { v ->
 // GitHub "owner/repo" whose Releases the app updates from (update/UpdateGate.kt); empty: no self-updates.
 val updateRepo: String = providers.gradleProperty("findme.updateRepo").getOrElse("")
 
+// Yandex MapKit key: MAPKIT_API_KEY in local.properties (never commit it), or the environment
+// variable of the same name (the release workflow sets it from a repository secret).
+val mapkitApiKey: String = Properties()
+    .apply { rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) } }
+    .getProperty("MAPKIT_API_KEY")
+    ?.takeIf { it.isNotBlank() }
+    ?: providers.environmentVariable("MAPKIT_API_KEY").orNull?.takeIf { it.isNotBlank() }
+    ?: error("MAPKIT_API_KEY is missing: add MAPKIT_API_KEY=<key> to local.properties")
+
 android {
     namespace = "com.example.findme"
     compileSdk {
@@ -39,6 +48,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "UPDATE_REPO", "\"$updateRepo\"")
+        buildConfigField("String", "MAPKIT_API_KEY", "\"$mapkitApiKey\"")
     }
 
     // Upload key that signs every published release, from keystore.properties (never commit it or the .jks file):

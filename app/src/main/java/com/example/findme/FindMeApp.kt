@@ -12,14 +12,10 @@ class FindMeApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        MapKitFactory.setApiKey(MAPKIT_API_KEY)
+        MapKitFactory.setApiKey(BuildConfig.MAPKIT_API_KEY)
         MapKitFactory.setLocale("en_US")
         MapKitFactory.initialize(this)
         container = AppContainer(this)
-    }
-
-    private companion object {
-        const val MAPKIT_API_KEY = "d4790a09-6211-4912-a465-5b5dcc361628"
     }
 }
 

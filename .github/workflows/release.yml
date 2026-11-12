@@ -11,6 +11,7 @@
 #   KEYSTORE_PASSWORD  storePassword from keystore.properties
 #   KEY_ALIAS          keyAlias
 #   KEY_PASSWORD       keyPassword
+#   MAPKIT_API_KEY     Yandex MapKit key (MAPKIT_API_KEY in local.properties)
 name: Release
 
 on:
@@ -45,8 +46,9 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          MAPKIT_API_KEY: ${{ secrets.MAPKIT_API_KEY }}
         run: |
-          for v in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+          for v in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD MAPKIT_API_KEY; do
             [ -n "${!v}" ] || { echo "::error::Repository secret $v is not set"; exit 1; }
           done
           echo "$KEYSTORE_BASE64" | base64 -d > findme-upload.jks
@@ -58,6 +60,8 @@ jobs:
           } > keystore.properties
 
       - name: Test and build
+        env:
+          MAPKIT_API_KEY: ${{ secrets.MAPKIT_API_KEY }}
         run: |
           # AGP 9 has unit tests for the debug build type only.
           ./gradlew :app:testDebugUnitTest :app:assembleRelease \
