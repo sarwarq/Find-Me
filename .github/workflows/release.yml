@@ -1,10 +1,8 @@
-# Publishes a new version of FindMe; installed apps must then update to it.
+# Publishes a new version of FindMe that installed apps then offer as an update.
 #
 #   git tag v1.2.3 && git push origin v1.2.3
 #
-# The code lives in this private repository. The APK is published to the public repository
-# RELEASES_REPO, which holds no code (only a README), so its releases' automatic "Source code"
-# archives contain no app code either. Each release there has:
+# Builds the APK signed with the upload key and creates a GitHub Release with:
 #   findme.apk   - the app (also the link to send to friends: .../releases/latest/download/findme.apk)
 #   update.json  - what the app reads to find the update (update/ReleaseInfo.kt)
 #
@@ -13,7 +11,6 @@
 #   KEYSTORE_PASSWORD  storePassword from keystore.properties
 #   KEY_ALIAS          keyAlias
 #   KEY_PASSWORD       keyPassword
-#   RELEASES_TOKEN     fine-grained token with "Contents: Read and write" on RELEASES_REPO only
 name: Release
 
 on:
@@ -21,11 +18,7 @@ on:
     tags: ['v[0-9]+.[0-9]+.[0-9]+']
 
 permissions:
-  contents: read
-
-env:
-  # Installed apps look here (findme.updateRepo); renaming it strands them.
-  RELEASES_REPO: sarwarq/Find-Me
+  contents: write
 
 concurrency:
   group: release
@@ -52,9 +45,8 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |
-          for v in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD RELEASES_TOKEN; do
+          for v in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
             [ -n "${!v}" ] || { echo "::error::Repository secret $v is not set"; exit 1; }
           done
           echo "$KEYSTORE_BASE64" | base64 -d > findme-upload.jks
@@ -70,7 +62,7 @@ jobs:
           # AGP 9 has unit tests for the debug build type only.
           ./gradlew :app:testDebugUnitTest :app:assembleRelease \
             -Pfindme.version="${GITHUB_REF_NAME#v}" \
-            -Pfindme.updateRepo="$RELEASES_REPO"
+            -Pfindme.updateRepo="$GITHUB_REPOSITORY"
 
       - name: Check the APK
         run: |
@@ -86,18 +78,17 @@ jobs:
 
       - name: Publish the release
         env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           TAG="$GITHUB_REF_NAME"
           jq -n \
             --argjson versionCode "$(cat version_code.txt)" \
             --arg versionName "${TAG#v}" \
-            --arg apkUrl "https://github.com/$RELEASES_REPO/releases/download/$TAG/findme.apk" \
+            --arg apkUrl "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/findme.apk" \
             --arg sha256 "$(sha256sum findme.apk | cut -d' ' -f1)" \
             --argjson size "$(stat -c %s findme.apk)" \
             '{versionCode: $versionCode, versionName: $versionName, apkUrl: $apkUrl, sha256: $sha256, size: $size}' \
             > update.json
           cat update.json
-          # The tag is created there on its README-only main branch.
-          gh release create "$TAG" findme.apk update.json -R "$RELEASES_REPO" --target main \
-            --title "FindMe ${TAG#v}" --notes "FindMe ${TAG#v}. Download findme.apk and install it." --latest
+          gh release create "$TAG" findme.apk update.json \
+            --title "FindMe ${TAG#v}" --generate-notes --verify-tag --latest
