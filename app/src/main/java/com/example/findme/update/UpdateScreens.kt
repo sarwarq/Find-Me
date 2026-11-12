@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -23,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.findme.R
@@ -31,7 +33,7 @@ import com.example.findme.ui.theme.yPalette
 
 /** Full screen that replaces the app until it is updated. Back does nothing. */
 @Composable
-fun UpdateRequiredScreen(message: String, onUpdate: () -> Unit) {
+fun UpdateRequiredScreen(message: String, download: DownloadState, onUpdate: () -> Unit, onCancel: () -> Unit) {
     BackHandler { }
     Box(
         Modifier.fillMaxSize().background(yPalette.sheet).systemBarsPadding().padding(24.dp),
@@ -42,7 +44,7 @@ fun UpdateRequiredScreen(message: String, onUpdate: () -> Unit) {
                 Modifier.size(96.dp).clip(CircleShape).background(yPalette.accentSoft),
                 contentAlignment = Alignment.Center,
             ) {
-                YIcon(R.drawable.ic_nav_arrow, null, tint = androidx.compose.ui.graphics.Color.Unspecified, size = 52.dp)
+                YIcon(R.drawable.ic_nav_arrow, null, tint = Color.Unspecified, size = 52.dp)
             }
             Spacer(Modifier.height(24.dp))
             Text(
@@ -59,29 +61,128 @@ fun UpdateRequiredScreen(message: String, onUpdate: () -> Unit) {
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(32.dp))
-            Surface(
-                onClick = onUpdate,
-                shape = RoundedCornerShape(14.dp),
-                color = yPalette.accent,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text("Update", style = MaterialTheme.typography.labelLarge, color = yPalette.onAccent)
+            if (download.busy) {
+                DownloadProgress(download)
+                if (download is DownloadState.Downloading) {
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(onClick = onCancel) { Text("Cancel", color = yPalette.textSecondary) }
+                }
+            } else {
+                (download as? DownloadState.Failed)?.let {
+                    ErrorText(it.message)
+                    Spacer(Modifier.height(16.dp))
+                }
+                Surface(
+                    onClick = onUpdate,
+                    shape = RoundedCornerShape(14.dp),
+                    color = yPalette.accent,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            if (download is DownloadState.Failed) "Try again" else "Update",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = yPalette.onAccent,
+                        )
+                    }
                 }
             }
         }
     }
 }
 
-/** "A new version is available" with Update / Later. */
+/** "A new version is available" with Update / Later, then the download progress. */
 @Composable
-fun UpdateAvailableDialog(onUpdate: () -> Unit, onLater: () -> Unit) {
+fun UpdateAvailableDialog(
+    versionName: String,
+    download: DownloadState,
+    onUpdate: () -> Unit,
+    onLater: () -> Unit,
+    onCancel: () -> Unit,
+) {
     AlertDialog(
-        onDismissRequest = onLater,
+        // Tapping outside during the download doesn't stop it; "Cancel" does.
+        onDismissRequest = { if (!download.busy) onLater() },
         containerColor = yPalette.sheet,
         title = { Text("Update available", color = yPalette.textPrimary) },
-        text = { Text("A new version of FindMe is ready with fixes and improvements.", color = yPalette.textSecondary) },
-        confirmButton = { TextButton(onClick = onUpdate) { Text("Update", color = yPalette.accent) } },
-        dismissButton = { TextButton(onClick = onLater) { Text("Later", color = yPalette.textSecondary) } },
+        text = {
+            Column {
+                Text(
+                    "FindMe $versionName is ready with fixes and improvements.",
+                    color = yPalette.textSecondary,
+                )
+                when (download) {
+                    is DownloadState.Failed -> {
+                        Spacer(Modifier.height(12.dp))
+                        ErrorText(download.message, TextAlign.Start)
+                    }
+                    is DownloadState.Downloading, DownloadState.Installing -> {
+                        Spacer(Modifier.height(16.dp))
+                        DownloadProgress(download)
+                    }
+                    DownloadState.Idle -> Unit
+                }
+            }
+        },
+        confirmButton = {
+            if (!download.busy) {
+                TextButton(onClick = onUpdate) {
+                    Text(if (download is DownloadState.Failed) "Try again" else "Update", color = yPalette.accent)
+                }
+            }
+        },
+        dismissButton = {
+            when (download) {
+                is DownloadState.Downloading -> TextButton(onClick = onCancel) { Text("Cancel", color = yPalette.textSecondary) }
+                DownloadState.Installing -> Unit
+                else -> TextButton(onClick = onLater) { Text("Later", color = yPalette.textSecondary) }
+            }
+        },
+    )
+}
+
+/** Downloading or waiting for Android's install screen. */
+private val DownloadState.busy: Boolean
+    get() = this is DownloadState.Downloading || this == DownloadState.Installing
+
+@Composable
+private fun DownloadProgress(download: DownloadState) {
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        val progress = (download as? DownloadState.Downloading)?.progress ?: -1f
+        if (progress >= 0f) {
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth(),
+                color = yPalette.accent,
+                trackColor = yPalette.accentSoft,
+            )
+        } else {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth(),
+                color = yPalette.accent,
+                trackColor = yPalette.accentSoft,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            when {
+                download == DownloadState.Installing -> "Installing…"
+                progress >= 0f -> "Downloading… ${(progress * 100).toInt()}%"
+                else -> "Downloading…"
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = yPalette.textSecondary,
+        )
+    }
+}
+
+@Composable
+private fun ErrorText(message: String, align: TextAlign = TextAlign.Center) {
+    Text(
+        message,
+        style = MaterialTheme.typography.bodyMedium,
+        color = yPalette.coralText,
+        textAlign = align,
+        modifier = Modifier.fillMaxWidth(),
     )
 }

@@ -15,7 +15,7 @@ googleServices = "4.5.0"
 credentials = "1.6.0"
 googleId = "1.2.1"
 playServicesLocation = "21.3.0"
-playAppUpdate = "2.1.0"
+orgJson = "20240303"
 fragment = "1.8.5"
 
 [libraries]
@@ -43,7 +43,7 @@ firebase-auth = { group = "com.google.firebase", name = "firebase-auth" }
 firebase-firestore = { group = "com.google.firebase", name = "firebase-firestore" }
 firebase-config = { group = "com.google.firebase", name = "firebase-config" }
 androidx-fragment = { group = "androidx.fragment", name = "fragment-ktx", version.ref = "fragment" }
-play-app-update = { group = "com.google.android.play", name = "app-update", version.ref = "playAppUpdate" }
+org-json = { group = "org.json", name = "json", version.ref = "orgJson" }
 androidx-credentials = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
 androidx-credentials-play-services = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }
 play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "playServicesLocation" }

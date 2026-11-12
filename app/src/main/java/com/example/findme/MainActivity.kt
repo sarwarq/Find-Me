@@ -29,11 +29,10 @@ class MainActivity : ComponentActivity() {
     private val vm: MapViewModel by viewModels { container.viewModelFactory }
     private val authVm: AuthViewModel by viewModels { container.viewModelFactory }
     private val meetVm: MeetViewModel by viewModels { container.viewModelFactory }
-    private lateinit var updates: UpdateGate
+    private val updates: UpdateGate get() = container.updates
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        updates = UpdateGate(this)
         // Opened by an invite link; skip it when the activity is only being recreated.
         if (savedInstanceState == null) handleInvite(intent)
         setContent {
@@ -53,12 +52,23 @@ class MainActivity : ComponentActivity() {
                     is UpdateState.Required -> {
                         // An unsupported version must not keep sending the location either.
                         LaunchedEffect(Unit) { LocationShareService.stop(this@MainActivity) }
-                        UpdateRequiredScreen(update.message, onUpdate = updates::update)
+                        UpdateRequiredScreen(
+                            update.message,
+                            updates.download,
+                            onUpdate = updates::update,
+                            onCancel = updates::cancel,
+                        )
                     }
                     else -> {
                         MapScreen(vm, authVm, meetVm, darkMap = dark)
                         if (update is UpdateState.Optional) {
-                            UpdateAvailableDialog(onUpdate = updates::update, onLater = updates::later)
+                            UpdateAvailableDialog(
+                                update.versionName,
+                                updates.download,
+                                onUpdate = updates::update,
+                                onLater = updates::later,
+                                onCancel = updates::cancel,
+                            )
                         }
                     }
                 }
@@ -68,7 +78,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        updates.onResume()
+        updates.onResume(this)
+    }
+
+    override fun onPause() {
+        updates.onPause(this)
+        super.onPause()
     }
 
     override fun onNewIntent(intent: Intent) {

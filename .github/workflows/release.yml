@@ -1,0 +1,93 @@
+# Publishes a new version of FindMe that installed apps then offer as an update.
+#
+#   git tag v1.2.3 && git push origin v1.2.3
+#
+# Builds the APK signed with the upload key and creates a GitHub Release with:
+#   findme.apk   - the app (also the link to send to friends: .../releases/latest/download/findme.apk)
+#   update.json  - what the app reads to find the update (update/ReleaseInfo.kt)
+#
+# Repository secrets (Settings → Secrets and variables → Actions):
+#   KEYSTORE_BASE64    base64 -w0 findme-upload.jks
+#   KEYSTORE_PASSWORD  storePassword from keystore.properties
+#   KEY_ALIAS          keyAlias
+#   KEY_PASSWORD       keyPassword
+name: Release
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          # gradle/gradle-daemon-jvm.properties asks for 25.
+          java-version: '25'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Upload key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          for v in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            [ -n "${!v}" ] || { echo "::error::Repository secret $v is not set"; exit 1; }
+          done
+          echo "$KEYSTORE_BASE64" | base64 -d > findme-upload.jks
+          {
+            echo "storeFile=findme-upload.jks"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > keystore.properties
+
+      - name: Test and build
+        run: |
+          ./gradlew :app:testReleaseUnitTest :app:assembleRelease \
+            -Pfindme.version="${GITHUB_REF_NAME#v}" \
+            -Pfindme.updateRepo="$GITHUB_REPOSITORY"
+
+      - name: Check the APK
+        run: |
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
+          cp app/build/outputs/apk/release/app-release.apk findme.apk
+          "$BT/apksigner" verify --print-certs findme.apk | tee signers.txt
+          # A debug-signed APK could never update the installed app.
+          if grep -q "CN=Android Debug" signers.txt; then
+            echo "::error::The APK is signed with the debug key"; exit 1
+          fi
+          "$BT/aapt2" dump badging findme.apk | head -1 | tee badging.txt
+          grep -oP "versionCode='\K[0-9]+" badging.txt > version_code.txt
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          jq -n \
+            --argjson versionCode "$(cat version_code.txt)" \
+            --arg versionName "${TAG#v}" \
+            --arg apkUrl "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/findme.apk" \
+            --arg sha256 "$(sha256sum findme.apk | cut -d' ' -f1)" \
+            --argjson size "$(stat -c %s findme.apk)" \
+            '{versionCode: $versionCode, versionName: $versionName, apkUrl: $apkUrl, sha256: $sha256, size: $size}' \
+            > update.json
+          cat update.json
+          gh release create "$TAG" findme.apk update.json \
+            --title "FindMe ${TAG#v}" --generate-notes --verify-tag --latest

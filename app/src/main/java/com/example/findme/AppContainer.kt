@@ -19,6 +19,7 @@ import com.example.findme.ui.MapViewModel
 import com.example.findme.ui.meet.MeetViewModel
 import com.example.findme.ui.nav.Voice
 import com.example.findme.ui.profile.AuthViewModel
+import com.example.findme.update.UpdateGate
 
 /**
  * Creates the app's long-lived objects once and hands them to whoever needs them
@@ -36,6 +37,8 @@ class AppContainer(private val app: Application) {
     val location: LocationRepository get() = LocationRepository
     val settings by lazy { SettingsStore(app) }
     val voice by lazy { Voice(app, settings) }
+    /** Created by the first screen; lives on so a download survives the activity being recreated. */
+    val updates by lazy { UpdateGate(app) }
 
     init {
         // Distances and speeds everywhere follow the Units setting.

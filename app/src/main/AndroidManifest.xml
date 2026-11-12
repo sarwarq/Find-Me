@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Self-updates from GitHub Releases (update/ApkInstaller.kt). Android still asks the user each time. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Text-to-speech engines, for spoken guidance (Android 11+ hides them otherwise). -->
     <queries>
@@ -54,6 +56,11 @@
             android:name=".location.LocationShareService"
             android:exported="false"
             android:foregroundServiceType="location" />
+
+        <!-- Result of installing an update; only our PendingIntent reaches it. -->
+        <receiver
+            android:name=".update.InstallResultReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

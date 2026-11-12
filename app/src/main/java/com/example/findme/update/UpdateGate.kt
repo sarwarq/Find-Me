@@ -5,26 +5,27 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
-import android.os.Build
+import android.content.pm.PackageInstaller
+import android.os.SystemClock
 import android.util.Log
-import androidx.activity.ComponentActivity
-import androidx.activity.result.ActivityResultLauncher
-import androidx.activity.result.IntentSenderRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.IntentCompat
 import androidx.core.content.edit
-import androidx.core.net.toUri
-import com.google.android.play.core.appupdate.AppUpdateInfo
-import com.google.android.play.core.appupdate.AppUpdateManager
-import com.google.android.play.core.appupdate.AppUpdateManagerFactory
-import com.google.android.play.core.appupdate.AppUpdateOptions
-import com.google.android.play.core.install.model.AppUpdateType
-import com.google.android.play.core.install.model.UpdateAvailability
+import com.example.findme.BuildConfig
 import com.google.firebase.FirebaseApp
 import com.google.firebase.remoteconfig.FirebaseRemoteConfig
 import com.google.firebase.remoteconfig.remoteConfigSettings
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
 
 /** Whether this app version may be used. */
 sealed interface UpdateState {
@@ -33,162 +34,249 @@ sealed interface UpdateState {
     /** Below `min_version_code`: the app is blocked until updated. */
     data class Required(val message: String) : UpdateState
 
-    /** Google Play has a newer version; the user may update now or later. */
-    data class Optional(val versionCode: Int) : UpdateState
+    /** GitHub has a newer version; the user may update now or later. */
+    data class Optional(val versionName: String) : UpdateState
+}
+
+/** The update download, shown on the update screen and in the dialog. */
+sealed interface DownloadState {
+    data object Idle : DownloadState
+
+    /** [progress] is 0..1, or -1 while the size is unknown. */
+    data class Downloading(val progress: Float) : DownloadState
+
+    /** Handed to Android, waiting for the user to confirm the install. */
+    data object Installing : DownloadState
+
+    data class Failed(val message: String) : DownloadState
 }
 
 /**
- * Forced and optional updates.
+ * Forced and optional updates, without Google Play.
  *
+ * - GitHub Releases: every release has an `update.json` (see [ReleaseInfo]); a newer
+ *   `versionCode` there shows "Update available". "Update" downloads the APK and installs it
+ *   through [ApkInstaller].
  * - Firebase Remote Config `min_version_code`: versions below it see a blocking
  *   "Update required" screen (set it in the console when an old version must stop working).
- * - Google Play In-App Updates: the "Update" button runs Play's full-screen update; an app not
- *   installed from Play (e.g. by adb) opens the store page instead.
+ *
+ * Debug builds never look at GitHub: they are signed with the debug key, and Android
+ * refuses to replace them with a release APK.
  *
  * This is the user-facing layer only. A patched APK can skip it, so anything that must be
- * enforced has to be checked on the server too (Play Integrity / App Check, planned).
+ * enforced has to be checked on the server too (App Check, planned).
  *
- * Create it in `onCreate` (it registers an activity result) and call [onResume].
+ * One for the whole app (in [com.example.findme.AppContainer]), so a download survives the
+ * activity being recreated. The activity calls [onResume] and [onPause].
  */
-class UpdateGate(private val activity: ComponentActivity) {
+class UpdateGate(context: Context) {
 
     var state by mutableStateOf<UpdateState>(UpdateState.Ok); private set
+    var download by mutableStateOf<DownloadState>(DownloadState.Idle); private set
 
-    private val playUpdates: AppUpdateManager = AppUpdateManagerFactory.create(activity)
-    private val prefs = activity.getSharedPreferences("update", Context.MODE_PRIVATE)
-    private val versionCode: Long = currentVersionCode(activity)
+    private val app = context.applicationContext
+    private val scope = MainScope()
+    private val prefs = app.getSharedPreferences("update", Context.MODE_PRIVATE)
+    private val versionCode: Long = app.packageManager.getPackageInfo(app.packageName, 0).longVersionCode
+    private val installer = ApkInstaller(app)
 
-    private val launcher: ActivityResultLauncher<IntentSenderRequest> =
-        activity.registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
-            // Cancelled or failed: a required update keeps the app blocked; check again.
-            if (result.resultCode != Activity.RESULT_OK) checkPlay()
-        }
+    /** `update.json` of the newest release; null when this build doesn't take updates from GitHub. */
+    private val latestUrl: String? = BuildConfig.UPDATE_REPO
+        .takeIf { it.isNotBlank() && !BuildConfig.DEBUG }
+        ?.let { "https://github.com/$it/releases/latest/download/update.json" }
 
     private val remoteConfig: FirebaseRemoteConfig? =
-        if (FirebaseApp.getApps(activity).isNotEmpty()) FirebaseRemoteConfig.getInstance() else null
+        if (FirebaseApp.getApps(app).isNotEmpty()) FirebaseRemoteConfig.getInstance() else null
+
+    private var minVersion = 0L
+    private var requiredMessage = DEFAULT_MESSAGE
+    private var latest: ReleaseInfo? = null
+
+    private var lastCheck = 0L
+    private var checkJob: Job? = null
+    private var installJob: Job? = null
+
+    /** The visible activity, to show Android's install confirmation from. */
+    private var resumed: Activity? = null
+    private var pendingConfirm: Intent? = null
 
     init {
         remoteConfig?.apply {
             // Debug builds fetch every time, so a changed value can be tested right away.
-            val debuggable = (activity.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+            val debuggable = (app.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
             setConfigSettingsAsync(
                 remoteConfigSettings { minimumFetchIntervalInSeconds = if (debuggable) 0 else FETCH_INTERVAL_SECONDS },
             )
             setDefaultsAsync(mapOf(KEY_MIN_VERSION to 0L, KEY_MESSAGE to DEFAULT_MESSAGE))
         }
         // The last fetched values work offline too.
-        applyRemote()
+        readRemote()
+        refresh()
         check()
     }
 
-    /** Fetches the newest minimum version, then asks Google Play about updates. */
+    /** Fetches the newest minimum version and the newest GitHub release. */
     fun check() {
-        val rc = remoteConfig
-        if (rc == null) {
-            checkPlay()
-            return
+        lastCheck = SystemClock.elapsedRealtime()
+        remoteConfig?.fetchAndActivate()?.addOnCompleteListener {
+            readRemote()
+            refresh()
         }
-        rc.fetchAndActivate().addOnCompleteListener {
-            applyRemote()
-            checkPlay()
-        }
-    }
-
-    /** Coming back to the app: resume an interrupted forced update, re-check a blocked app. */
-    fun onResume() {
-        playUpdates.appUpdateInfo.addOnSuccessListener { info ->
-            if (info.updateAvailability() == UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS) startPlayUpdate(info)
-        }
-        if (state is UpdateState.Required) check()
-    }
-
-    /** "Update" button. */
-    fun update() {
-        playUpdates.appUpdateInfo
-            .addOnSuccessListener { info ->
-                if (info.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE &&
-                    info.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE)
-                ) {
-                    startPlayUpdate(info)
-                } else {
-                    openStore()
+        if (latestUrl != null && checkJob?.isActive != true) {
+            checkJob = scope.launch {
+                fetchLatest()?.let {
+                    latest = it
+                    refresh()
                 }
             }
-            .addOnFailureListener { openStore() }
+        }
+    }
+
+    /** Coming back to the app: show a pending install confirmation, re-check now and then. */
+    fun onResume(activity: Activity) {
+        resumed = activity
+        launchConfirm()
+        if (state is UpdateState.Required || SystemClock.elapsedRealtime() - lastCheck > RECHECK_MS) check()
+    }
+
+    fun onPause(activity: Activity) {
+        if (resumed === activity) resumed = null
+    }
+
+    /** "Update" button: download the newest release and install it. */
+    fun update() {
+        if (installJob?.isActive == true || download == DownloadState.Installing) return
+        installJob = scope.launch {
+            download = DownloadState.Downloading(-1f)
+            val release = (latestUrl?.let { fetchLatest() } ?: latest)?.also { latest = it }
+            if (release == null || release.versionCode <= versionCode) {
+                download = DownloadState.Failed(
+                    when {
+                        latestUrl == null -> "This build can't update itself. Install FindMe from GitHub."
+                        release == null -> "Could not check for updates. Check the internet connection."
+                        else -> "No newer version is published yet. Try again later."
+                    },
+                )
+                return@launch
+            }
+            try {
+                installer.install(release) { download = DownloadState.Downloading(it) }
+                // Android answers in onInstallResult: confirmation, success or failure.
+                download = DownloadState.Installing
+            } catch (e: CancellationException) {
+                download = DownloadState.Idle
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Update download failed", e)
+                download = DownloadState.Failed("Download failed. Check the internet connection and try again.")
+            }
+        }
+    }
+
+    /** "Cancel" during the download. */
+    fun cancel() {
+        installJob?.cancel()
     }
 
     /** "Later" on an optional update: don't ask again for this version. */
     fun later() {
-        (state as? UpdateState.Optional)?.let { prefs.edit { putInt(KEY_DISMISSED, it.versionCode) } }
-        state = UpdateState.Ok
+        latest?.let { prefs.edit { putLong(KEY_DISMISSED, it.versionCode) } }
+        cancel()
+        refresh()
     }
 
-    private fun applyRemote() {
+    /** From [InstallResultReceiver]: what Android did with the committed APK. */
+    internal fun onInstallResult(intent: Intent) {
+        when (val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
+            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                pendingConfirm = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java)
+                download = DownloadState.Installing
+                launchConfirm()
+            }
+            // On success Android restarts the app right away; this is rarely seen.
+            PackageInstaller.STATUS_SUCCESS -> download = DownloadState.Idle
+            // The user said no; they can tap "Update" again.
+            PackageInstaller.STATUS_FAILURE_ABORTED -> download = DownloadState.Idle
+            else -> {
+                Log.w(TAG, "Install failed: $status ${intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)}")
+                download = DownloadState.Failed(installError(status))
+            }
+        }
+    }
+
+    private fun launchConfirm() {
+        // In the background: shown the next time the app is opened (onResume).
+        val activity = resumed ?: return
+        val confirm = pendingConfirm ?: return
+        pendingConfirm = null
+        try {
+            activity.startActivity(confirm)
+        } catch (e: ActivityNotFoundException) {
+            Log.w(TAG, "No install confirmation screen", e)
+            download = DownloadState.Failed("Could not install the update.")
+        }
+    }
+
+    private fun readRemote() {
         val rc = remoteConfig ?: return
-        val min = rc.getLong(KEY_MIN_VERSION)
-        if (versionCode < min) {
-            state = UpdateState.Required(rc.getString(KEY_MESSAGE).ifBlank { DEFAULT_MESSAGE })
-        } else if (state is UpdateState.Required) {
-            state = UpdateState.Ok
+        minVersion = rc.getLong(KEY_MIN_VERSION)
+        requiredMessage = rc.getString(KEY_MESSAGE).ifBlank { DEFAULT_MESSAGE }
+    }
+
+    private fun refresh() {
+        val release = latest
+        state = when {
+            versionCode < minVersion -> UpdateState.Required(requiredMessage)
+            release != null && release.versionCode > versionCode &&
+                prefs.getLong(KEY_DISMISSED, 0) != release.versionCode -> UpdateState.Optional(release.versionName)
+            else -> UpdateState.Ok
         }
     }
 
-    private fun checkPlay() {
-        playUpdates.appUpdateInfo
-            .addOnSuccessListener { info ->
-                if (info.updateAvailability() != UpdateAvailability.UPDATE_AVAILABLE) return@addOnSuccessListener
-                when (state) {
-                    // Blocked anyway: start Play's update right away.
-                    is UpdateState.Required -> if (info.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE)) startPlayUpdate(info)
-                    UpdateState.Ok -> if (prefs.getInt(KEY_DISMISSED, 0) != info.availableVersionCode()) {
-                        state = UpdateState.Optional(info.availableVersionCode())
-                    }
-                    is UpdateState.Optional -> Unit
-                }
+    /** The newest release, or null if there is none yet, the network is down or the file is broken. */
+    private suspend fun fetchLatest(): ReleaseInfo? {
+        val url = latestUrl ?: return null
+        return withContext(Dispatchers.IO) {
+            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                connectTimeout = TIMEOUT_MS
+                readTimeout = TIMEOUT_MS
+                useCaches = false
             }
-            // Not installed from Google Play, no Play Store, offline: nothing to offer.
-            .addOnFailureListener { Log.i(TAG, "Play update check unavailable: ${it.message}") }
-    }
-
-    private fun startPlayUpdate(info: AppUpdateInfo) {
-        try {
-            playUpdates.startUpdateFlowForResult(info, launcher, AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build())
-        } catch (e: Exception) {
-            Log.w(TAG, "Play update failed to start", e)
-            openStore()
-        }
-    }
-
-    private fun openStore() {
-        val pkg = activity.packageName
-        try {
-            activity.startActivity(Intent(Intent.ACTION_VIEW, "market://details?id=$pkg".toUri()))
-        } catch (_: ActivityNotFoundException) {
             try {
-                activity.startActivity(
-                    Intent(Intent.ACTION_VIEW, "https://play.google.com/store/apps/details?id=$pkg".toUri()),
-                )
-            } catch (_: ActivityNotFoundException) {
-                Log.w(TAG, "No app to open the store")
+                when (val code = conn.responseCode) {
+                    HttpURLConnection.HTTP_OK -> ReleaseInfo.parse(conn.inputStream.bufferedReader().use { it.readText() })
+                    // No release published yet.
+                    HttpURLConnection.HTTP_NOT_FOUND -> null
+                    else -> throw IOException("HTTP $code")
+                }
+            } catch (e: Exception) {
+                Log.i(TAG, "Update check failed: $e")
+                null
+            } finally {
+                conn.disconnect()
             }
         }
+    }
+
+    private fun installError(status: Int): String = when (status) {
+        PackageInstaller.STATUS_FAILURE_CONFLICT, PackageInstaller.STATUS_FAILURE_INCOMPATIBLE ->
+            "This copy of FindMe was signed with a different key. Uninstall it and install FindMe from GitHub."
+        PackageInstaller.STATUS_FAILURE_STORAGE -> "Not enough free space for the update."
+        PackageInstaller.STATUS_FAILURE_BLOCKED -> "Installing apps is blocked on this phone."
+        else -> "Could not install the update."
     }
 
     private companion object {
         const val TAG = "UpdateGate"
         const val KEY_MIN_VERSION = "min_version_code"
         const val KEY_MESSAGE = "update_message"
-        const val KEY_DISMISSED = "dismissed_version"
+        /** A versionCode (Long). The Play-era key "dismissed_version" held an Int, so it isn't reused. */
+        const val KEY_DISMISSED = "dismissed_release"
         const val DEFAULT_MESSAGE = "This version of FindMe is no longer supported. Please update to keep using the app."
         /** Remote Config refetches at most this often (Firebase limits frequent fetches). */
         const val FETCH_INTERVAL_SECONDS = 60L * 60
-
-        fun currentVersionCode(context: Context): Long {
-            val info = context.packageManager.getPackageInfo(context.packageName, 0)
-            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else {
-                @Suppress("DEPRECATION")
-                info.versionCode.toLong()
-            }
-        }
+        /** Look for a new release again when the app comes back after this long. */
+        const val RECHECK_MS = 6 * 60 * 60 * 1000L
+        const val TIMEOUT_MS = 15_000
     }
 }
