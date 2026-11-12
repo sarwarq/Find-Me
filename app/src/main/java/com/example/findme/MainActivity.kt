@@ -13,7 +13,6 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import com.example.findme.location.LocationShareService
-import com.example.findme.update.UpdateAvailableDialog
 import com.example.findme.update.UpdateGate
 import com.example.findme.update.UpdateRequiredScreen
 import com.example.findme.update.UpdateState
@@ -59,18 +58,7 @@ class MainActivity : ComponentActivity() {
                             onCancel = updates::cancel,
                         )
                     }
-                    else -> {
-                        MapScreen(vm, authVm, meetVm, darkMap = dark)
-                        if (update is UpdateState.Optional) {
-                            UpdateAvailableDialog(
-                                update.versionName,
-                                updates.download,
-                                onUpdate = updates::update,
-                                onLater = updates::later,
-                                onCancel = updates::cancel,
-                            )
-                        }
-                    }
+                    UpdateState.Ok -> MapScreen(vm, authVm, meetVm, darkMap = dark)
                 }
             }
         }

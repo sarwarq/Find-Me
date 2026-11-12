@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -91,56 +90,6 @@ fun UpdateRequiredScreen(message: String, download: DownloadState, onUpdate: () 
     }
 }
 
-/** "A new version is available" with Update / Later, then the download progress. */
-@Composable
-fun UpdateAvailableDialog(
-    versionName: String,
-    download: DownloadState,
-    onUpdate: () -> Unit,
-    onLater: () -> Unit,
-    onCancel: () -> Unit,
-) {
-    AlertDialog(
-        // Tapping outside during the download doesn't stop it; "Cancel" does.
-        onDismissRequest = { if (!download.busy) onLater() },
-        containerColor = yPalette.sheet,
-        title = { Text("Update available", color = yPalette.textPrimary) },
-        text = {
-            Column {
-                Text(
-                    "FindMe $versionName is ready with fixes and improvements.",
-                    color = yPalette.textSecondary,
-                )
-                when (download) {
-                    is DownloadState.Failed -> {
-                        Spacer(Modifier.height(12.dp))
-                        ErrorText(download.message, TextAlign.Start)
-                    }
-                    is DownloadState.Downloading, DownloadState.Installing -> {
-                        Spacer(Modifier.height(16.dp))
-                        DownloadProgress(download)
-                    }
-                    DownloadState.Idle -> Unit
-                }
-            }
-        },
-        confirmButton = {
-            if (!download.busy) {
-                TextButton(onClick = onUpdate) {
-                    Text(if (download is DownloadState.Failed) "Try again" else "Update", color = yPalette.accent)
-                }
-            }
-        },
-        dismissButton = {
-            when (download) {
-                is DownloadState.Downloading -> TextButton(onClick = onCancel) { Text("Cancel", color = yPalette.textSecondary) }
-                DownloadState.Installing -> Unit
-                else -> TextButton(onClick = onLater) { Text("Later", color = yPalette.textSecondary) }
-            }
-        },
-    )
-}
-
 /** Downloading or waiting for Android's install screen. */
 private val DownloadState.busy: Boolean
     get() = this is DownloadState.Downloading || this == DownloadState.Installing
@@ -177,12 +126,12 @@ private fun DownloadProgress(download: DownloadState) {
 }
 
 @Composable
-private fun ErrorText(message: String, align: TextAlign = TextAlign.Center) {
+private fun ErrorText(message: String) {
     Text(
         message,
         style = MaterialTheme.typography.bodyMedium,
         color = yPalette.coralText,
-        textAlign = align,
+        textAlign = TextAlign.Center,
         modifier = Modifier.fillMaxWidth(),
     )
 }

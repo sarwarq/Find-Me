@@ -31,14 +31,11 @@ import java.net.URL
 sealed interface UpdateState {
     data object Ok : UpdateState
 
-    /** Below `min_version_code`: the app is blocked until updated. */
+    /** A newer release is out, or this version is below `min_version_code`: blocked until updated. */
     data class Required(val message: String) : UpdateState
-
-    /** GitHub has a newer version; the user may update now or later. */
-    data class Optional(val versionName: String) : UpdateState
 }
 
-/** The update download, shown on the update screen and in the dialog. */
+/** The update download, shown on the update screen. */
 sealed interface DownloadState {
     data object Idle : DownloadState
 
@@ -52,13 +49,14 @@ sealed interface DownloadState {
 }
 
 /**
- * Forced and optional updates, without Google Play.
+ * Forced updates, without Google Play: only the newest version may be used.
  *
- * - GitHub Releases: every release has an `update.json` (see [ReleaseInfo]); a newer
- *   `versionCode` there shows "Update available". "Update" downloads the APK and installs it
- *   through [ApkInstaller].
- * - Firebase Remote Config `min_version_code`: versions below it see a blocking
- *   "Update required" screen (set it in the console when an old version must stop working).
+ * - GitHub Releases: every release has an `update.json` (see [ReleaseInfo]). A newer
+ *   `versionCode` there replaces the app with the blocking "Update required" screen; "Update"
+ *   downloads the APK and installs it through [ApkInstaller]. The newest known version is
+ *   remembered, so the app stays blocked when opened offline.
+ * - Firebase Remote Config `min_version_code`: blocks the same way; a kill switch that works
+ *   even if GitHub can't be reached.
  *
  * Debug builds never look at GitHub: they are signed with the debug key, and Android
  * refuses to replace them with a release APK.
@@ -90,7 +88,6 @@ class UpdateGate(context: Context) {
 
     private var minVersion = 0L
     private var requiredMessage = DEFAULT_MESSAGE
-    private var latest: ReleaseInfo? = null
 
     private var lastCheck = 0L
     private var checkJob: Job? = null
@@ -123,12 +120,7 @@ class UpdateGate(context: Context) {
             refresh()
         }
         if (latestUrl != null && checkJob?.isActive != true) {
-            checkJob = scope.launch {
-                fetchLatest()?.let {
-                    latest = it
-                    refresh()
-                }
-            }
+            checkJob = scope.launch { fetchLatest().onSuccess(::remember) }
         }
     }
 
@@ -148,7 +140,7 @@ class UpdateGate(context: Context) {
         if (installJob?.isActive == true || download == DownloadState.Installing) return
         installJob = scope.launch {
             download = DownloadState.Downloading(-1f)
-            val release = (latestUrl?.let { fetchLatest() } ?: latest)?.also { latest = it }
+            val release = latestUrl?.let { fetchLatest().onSuccess(::remember).getOrNull() }
             if (release == null || release.versionCode <= versionCode) {
                 download = DownloadState.Failed(
                     when {
@@ -176,13 +168,6 @@ class UpdateGate(context: Context) {
     /** "Cancel" during the download. */
     fun cancel() {
         installJob?.cancel()
-    }
-
-    /** "Later" on an optional update: don't ask again for this version. */
-    fun later() {
-        latest?.let { prefs.edit { putLong(KEY_DISMISSED, it.versionCode) } }
-        cancel()
-        refresh()
     }
 
     /** From [InstallResultReceiver]: what Android did with the committed APK. */
@@ -223,19 +208,34 @@ class UpdateGate(context: Context) {
         requiredMessage = rc.getString(KEY_MESSAGE).ifBlank { DEFAULT_MESSAGE }
     }
 
+    /** Stores what GitHub says is newest (null: no release), so the gate holds offline too. */
+    private fun remember(release: ReleaseInfo?) {
+        prefs.edit {
+            if (release == null) {
+                remove(KEY_LATEST_CODE).remove(KEY_LATEST_NAME)
+            } else {
+                putLong(KEY_LATEST_CODE, release.versionCode).putString(KEY_LATEST_NAME, release.versionName)
+            }
+        }
+        refresh()
+    }
+
     private fun refresh() {
-        val release = latest
         state = when {
             versionCode < minVersion -> UpdateState.Required(requiredMessage)
-            release != null && release.versionCode > versionCode &&
-                prefs.getLong(KEY_DISMISSED, 0) != release.versionCode -> UpdateState.Optional(release.versionName)
+            prefs.getLong(KEY_LATEST_CODE, 0) > versionCode -> UpdateState.Required(
+                "FindMe ${prefs.getString(KEY_LATEST_NAME, "")} is out. Update to keep using the app.",
+            )
             else -> UpdateState.Ok
         }
     }
 
-    /** The newest release, or null if there is none yet, the network is down or the file is broken. */
-    private suspend fun fetchLatest(): ReleaseInfo? {
-        val url = latestUrl ?: return null
+    /**
+     * The newest release: success(null) if none is published yet, failure if the network is down
+     * or the file is broken (then the last known newest version stays in effect).
+     */
+    private suspend fun fetchLatest(): Result<ReleaseInfo?> {
+        val url = latestUrl ?: return Result.success(null)
         return withContext(Dispatchers.IO) {
             val conn = (URL(url).openConnection() as HttpURLConnection).apply {
                 connectTimeout = TIMEOUT_MS
@@ -244,14 +244,15 @@ class UpdateGate(context: Context) {
             }
             try {
                 when (val code = conn.responseCode) {
-                    HttpURLConnection.HTTP_OK -> ReleaseInfo.parse(conn.inputStream.bufferedReader().use { it.readText() })
+                    HttpURLConnection.HTTP_OK ->
+                        Result.success(ReleaseInfo.parse(conn.inputStream.bufferedReader().use { it.readText() }))
                     // No release published yet.
-                    HttpURLConnection.HTTP_NOT_FOUND -> null
+                    HttpURLConnection.HTTP_NOT_FOUND -> Result.success(null)
                     else -> throw IOException("HTTP $code")
                 }
             } catch (e: Exception) {
                 Log.i(TAG, "Update check failed: $e")
-                null
+                Result.failure(e)
             } finally {
                 conn.disconnect()
             }
@@ -270,13 +271,14 @@ class UpdateGate(context: Context) {
         const val TAG = "UpdateGate"
         const val KEY_MIN_VERSION = "min_version_code"
         const val KEY_MESSAGE = "update_message"
-        /** A versionCode (Long). The Play-era key "dismissed_version" held an Int, so it isn't reused. */
-        const val KEY_DISMISSED = "dismissed_release"
+        /** The newest release seen on GitHub. (Older versions stored "dismissed_release" for "Later".) */
+        const val KEY_LATEST_CODE = "latest_release"
+        const val KEY_LATEST_NAME = "latest_release_name"
         const val DEFAULT_MESSAGE = "This version of FindMe is no longer supported. Please update to keep using the app."
         /** Remote Config refetches at most this often (Firebase limits frequent fetches). */
         const val FETCH_INTERVAL_SECONDS = 60L * 60
         /** Look for a new release again when the app comes back after this long. */
-        const val RECHECK_MS = 6 * 60 * 60 * 1000L
+        const val RECHECK_MS = 30 * 60 * 1000L
         const val TIMEOUT_MS = 15_000
     }
 }
