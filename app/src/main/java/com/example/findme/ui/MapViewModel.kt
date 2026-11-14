@@ -55,7 +55,8 @@ sealed interface Screen {
 }
 
 sealed interface MapCommand {
-    data class MoveTo(val point: Point, val zoom: Float? = null) : MapCommand
+    /** [toMe]: the camera goes to my location (the button, or following me), not to a place. */
+    data class MoveTo(val point: Point, val zoom: Float? = null, val toMe: Boolean = false) : MapCommand
     data class Fit(val box: BoundingBox) : MapCommand
     /** Guidance: glide the arrow to [point]; the camera follows it unless [moveCamera] is false. */
     data class Follow(
@@ -129,6 +130,8 @@ class MapViewModel(
     var metersPerPx by mutableFloatStateOf(0f)
     var lastCamera: CameraPosition? = null; private set
     private var centeredOnUser = false
+    /** The user moved the map: the first location fix no longer pulls the camera to me. */
+    private var mapTouched = false
 
     // ---------- Layers ----------
 
@@ -158,6 +161,13 @@ class MapViewModel(
     init {
         route.onLoaded = { result -> if (!nav.onRouteLoaded(result)) route.fit() }
         viewModelScope.launch { location.fix.filterNotNull().collect(::onFix) }
+        // The camera went to a place or a route: it stops following me until the button is tapped,
+        // else the next location fix would pull it back from what I'm looking at.
+        viewModelScope.launch {
+            commands.collect { cmd ->
+                if ((cmd is MapCommand.MoveTo && !cmd.toMe) || cmd is MapCommand.Fit) following = false
+            }
+        }
     }
 
     // =====================================================================
@@ -296,6 +306,9 @@ class MapViewModel(
         loadDetails(place, move = false)
     }
 
+    /** A tap or a long tap on the map, off a POI: a card for that spot (a house, any point) to go there. */
+    fun onMapTap(point: Point) = onLongTap(point)
+
     fun onLongTap(point: Point) {
         if (screen is Screen.Route || nav.active) return
         val place = Place(
@@ -308,10 +321,6 @@ class MapViewModel(
         )
         showPlace(place, loading = true, move = false, replace = screen is Screen.PlaceCard, searchText = null)
         loadDetails(place, move = false)
-    }
-
-    fun onMapTap() {
-        if (screen is Screen.PlaceCard) onBack()
     }
 
     fun openBookmarks() {
@@ -532,8 +541,9 @@ class MapViewModel(
         }
         when {
             nav.active -> Unit // the guidance camera follows by itself
-            following -> commands.tryEmit(MapCommand.MoveTo(fix.point))
-            first && screen == Screen.Home -> commands.tryEmit(MapCommand.MoveTo(fix.point, 16f))
+            following -> commands.tryEmit(MapCommand.MoveTo(fix.point, toMe = true))
+            first && !mapTouched && screen == Screen.Home ->
+                commands.tryEmit(MapCommand.MoveTo(fix.point, 16f, toMe = true))
         }
         if (first) refreshSavedEtas()
     }
@@ -547,7 +557,7 @@ class MapViewModel(
             return true
         }
         following = true
-        commands.tryEmit(MapCommand.MoveTo(me, max(currentZoom?.invoke() ?: 16f, 16f)))
+        commands.tryEmit(MapCommand.MoveTo(me, max(currentZoom?.invoke() ?: 16f, 16f), toMe = true))
         return true
     }
 
@@ -580,6 +590,7 @@ class MapViewModel(
         if (abs(position.azimuth - azimuth) > 0.5f) azimuth = position.azimuth
         if (byUser) {
             following = false
+            mapTouched = true
             if (nav.active) nav.pauseFollow()
             if (finished && screen is Screen.Results) search.onMapMoved()
         }

@@ -17,10 +17,7 @@ import com.example.findme.ui.MapCommand
 import com.example.findme.ui.route.RouteController
 import com.yandex.mapkit.geometry.Point
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.launch
 
 /** Guidance along the chosen route: progress, the camera behind the arrow, surviving app kills. */
 class NavigationController(
@@ -39,7 +36,7 @@ class NavigationController(
 ) {
     var active by mutableStateOf(false); private set
     var progress by mutableStateOf<NavProgress?>(null); private set
-    /** The user moved the map in guidance: the camera stops following for [FREE_MS]. */
+    /** The user moved the map in guidance: the camera stays put until "back to route" is tapped. */
     var free by mutableStateOf(false); private set
     /** I left the route and a new one is on its way. */
     var rerouting by mutableStateOf(false); private set
@@ -53,8 +50,6 @@ class NavigationController(
     /** Where I am along the route (null off it) and how fast, for the gliding arrow. */
     private var along: Double? = null
     private var speed: Double? = null
-    private var freeJob: Job? = null
-    private var lastGestureAt = 0L
 
     /** Navigation that was on when the app was closed; it restarts at the first location fix. */
     private var pendingResume: SavedNav? = store.load()
@@ -118,8 +113,6 @@ class NavigationController(
         tracker = null
         prompter = null
         rerouting = false
-        freeJob?.cancel()
-        freeJob = null
         free = false
         store.clear()
     }
@@ -131,23 +124,12 @@ class NavigationController(
         if (active) follow(fix.point, moveCamera = !free)
     }
 
-    /** The user moved the map in guidance: look around freely, back to the arrow after 30 s. */
+    /** The user moved the map in guidance: look around freely; only the button brings the arrow back. */
     fun pauseFollow() {
-        lastGestureAt = SystemClock.elapsedRealtime()
         free = true
-        if (freeJob?.isActive == true) return
-        freeJob = scope.launch {
-            while (true) {
-                val left = lastGestureAt + FREE_MS - SystemClock.elapsedRealtime()
-                if (left <= 0) break
-                delay(left)
-            }
-            freeJob = null
-            resumeFollow()
-        }
     }
 
-    /** The rest of the route on one screen; back to the arrow by the button or 30 s later. */
+    /** The rest of the route on one screen; back to the arrow by the button. */
     fun overview() {
         val track = route.currentVariant?.track ?: return
         val from = (progress?.trackSegment ?: 0).coerceIn(0, track.points.size - 1)
@@ -156,10 +138,8 @@ class NavigationController(
         commands.tryEmit(MapCommand.Fit(box))
     }
 
-    /** Back to the arrow at the guidance zoom (the button, or 30 s after the last gesture). */
+    /** Back to the arrow at the guidance zoom (the button). */
     fun resumeFollow() {
-        freeJob?.cancel()
-        freeJob = null
         free = false
         val me = location.fix.value?.point ?: return
         if (active) follow(me)
@@ -234,7 +214,6 @@ class NavigationController(
     }
 
     private companion object {
-        const val FREE_MS = 30_000L
         /** Farther than this from the route, I'm off it (as [OffRouteDetector] counts). */
         const val OFF_ROUTE_M = 50.0
     }

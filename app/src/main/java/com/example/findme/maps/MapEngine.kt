@@ -109,7 +109,7 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
 
     // MapKit keeps only weak references to listeners, so they live as fields here.
     private val inputListener = object : InputListener {
-        override fun onMapTap(map: Map, point: Point) = vm.onMapTap()
+        override fun onMapTap(map: Map, point: Point) = vm.onMapTap(point)
         override fun onMapLongTap(map: Map, point: Point) = vm.onLongTap(point)
     }
 

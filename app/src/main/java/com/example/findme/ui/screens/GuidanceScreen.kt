@@ -150,7 +150,7 @@ fun GuidanceOverlay(
                 )
             }
             if (vm.nav.free) {
-                // The map was moved: back to the arrow now (it also comes back by itself after 30 s).
+                // The map was moved: the camera stays there until this button brings it back to the arrow.
                 GuidanceButton(onClick = { vm.nav.resumeFollow() }) {
                     YIcon(R.drawable.ms_navigation, "Back to route", tint = yPalette.accent, size = 28.dp)
                 }
