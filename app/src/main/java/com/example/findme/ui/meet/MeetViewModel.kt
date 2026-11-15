@@ -24,6 +24,7 @@ import com.example.findme.data.meet.RouteGeom
 import com.example.findme.data.meet.RouteProjection
 import com.example.findme.data.meet.SharedRoute
 import com.example.findme.location.LocationShareService
+import com.example.findme.location.SharePolicy
 import com.example.findme.location.Sharing
 import com.example.findme.ui.profile.PhotoCache
 import com.yandex.mapkit.geometry.Point
@@ -85,8 +86,12 @@ class MeetViewModel(
     var mapMeetingId by mutableStateOf<String?>(null); private set
     val mapMeeting: Meeting? get() = mapMeetingId?.let { id -> meetings.firstOrNull { it.id == id } }
 
-    /** Live positions in [mapMeetingId], by uid. */
-    var locations by mutableStateOf<Map<String, LiveLocation>>(emptyMap()); private set
+    /** Everything Firestore has under [mapMeetingId], by uid, including positions left behind. */
+    private var allLocations by mutableStateOf<Map<String, LiveLocation>>(emptyMap())
+
+    /** Live positions in [mapMeetingId], by uid; ones nobody updated for hours are dropped as [now] ticks. */
+    val locations: Map<String, LiveLocation>
+        get() = allLocations.filterValues { !SharePolicy.isGone(it.updatedMillis, now) }
 
     /** Routes members drive in navigation in [mapMeetingId], by uid. */
     var routes by mutableStateOf<Map<String, SharedRoute>>(emptyMap()); private set
@@ -264,7 +269,8 @@ class MeetViewModel(
 
     /** New positions; a friend who has just arrived gets a notification (if the setting is on). */
     private fun onLocations(new: Map<String, LiveLocation>) {
-        locations = new
+        allLocations = new
+        deleteGone()
         val arrived = new.values.filter { it.arrived }.mapTo(HashSet()) { it.uid }
         val before = arrivedBefore
         arrivedBefore = arrived
@@ -277,15 +283,35 @@ class MeetViewModel(
         }
     }
 
+    /** Positions (uid, last update) already asked to be deleted, so each is deleted once. */
+    private val deleted = HashSet<Pair<String, Long?>>()
+
+    /**
+     * Deletes positions nobody updated for [SharePolicy.KEEP_MILLIS]: a phone that died or was
+     * killed while sharing, an old "arrived" point. Firestore's TTL needs a paid plan, so the
+     * clients clean up instead. The rules let me delete only my own position, or anyone's in a
+     * meeting I organize; the others' leftovers are just hidden (see [locations]).
+     */
+    private fun deleteGone() {
+        val meetingId = mapMeetingId ?: return
+        val me = user?.uid ?: return
+        val organizer = mapMeeting?.ownerUid == me
+        allLocations.values
+            .filter { SharePolicy.isGone(it.updatedMillis, now) && (organizer || it.uid == me) }
+            .filter { deleted.add(it.uid to it.updatedMillis) }
+            .forEach { repo.removeLocation(meetingId, it.uid) }
+    }
+
     /** Draws the meeting's members (and the routes they drive) on the map and keeps them updated. */
     fun showOnMap(meetingId: String) {
         if (mapMeetingId == meetingId) return
         stopLocations()
         stopRoutes()
-        locations = emptyMap()
+        allLocations = emptyMap()
         routes = emptyMap()
         mapMeetingId = meetingId
         arrivedBefore = null
+        deleted.clear()
         stopLocations = repo.observeLocations(meetingId) { onLocations(it) }
         stopRoutes = repo.observeRoutes(meetingId) { list ->
             routes = list
@@ -300,6 +326,7 @@ class MeetViewModel(
             clockJob = viewModelScope.launch {
                 while (isActive) {
                     now = System.currentTimeMillis()
+                    deleteGone()
                     delay(5_000)
                 }
             }
@@ -312,7 +339,7 @@ class MeetViewModel(
         stopLocations = {}
         stopRoutes = {}
         mapMeetingId = null
-        locations = emptyMap()
+        allLocations = emptyMap()
         routes = emptyMap()
         clockJob?.cancel()
         clockJob = null

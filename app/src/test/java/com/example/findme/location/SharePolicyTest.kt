@@ -53,7 +53,38 @@ class SharePolicyTest {
 
     @Test
     fun `a rough fix can't say I've arrived`() {
-        assertEquals(ShareDecision.Write, decide(pt(0.0, 2_000.0), accuracy = 150f))
+        assertEquals(ShareDecision.Skip, decide(pt(0.0, 2_000.0), accuracy = 150f))
+        assertEquals(ShareDecision.Write, decide(pt(0.0, 2_000.0), accuracy = 150f, lastWrite = null, lastWriteMillis = 0))
+    }
+
+    @Test
+    fun `a rough fix is not sent, however far it jumps`() {
+        assertEquals(ShareDecision.Skip, decide(pt(0.0, 900.0), accuracy = 500f))
+    }
+
+    @Test
+    fun `while only rough fixes come, the last good position is sent again every 30 seconds`() {
+        assertEquals(ShareDecision.Skip, decide(pt(0.0, 900.0), accuracy = 500f, now = start + 80_000))
+        assertEquals(ShareDecision.Resend, decide(pt(0.0, 900.0), accuracy = 500f, now = start + 80_001))
+    }
+
+    @Test
+    fun `the first fix is sent even when rough, so the others see me at all`() {
+        assertEquals(ShareDecision.Write, decide(pt(0.0, 0.0), accuracy = 800f, lastWrite = null, lastWriteMillis = 0))
+    }
+
+    @Test
+    fun `100 m accuracy still counts, and unknown accuracy is trusted`() {
+        assertEquals(ShareDecision.Write, decide(pt(0.0, 50.0), accuracy = 100f))
+        assertEquals(ShareDecision.Write, decide(pt(0.0, 50.0), accuracy = 0f))
+    }
+
+    @Test
+    fun `a position is gone 2 hours after its last update`() {
+        val updated = start
+        assertEquals(false, SharePolicy.isGone(updated, updated + 2 * 60 * 60 * 1000L))
+        assertEquals(true, SharePolicy.isGone(updated, updated + 2 * 60 * 60 * 1000L + 1))
+        assertEquals(false, SharePolicy.isGone(null, updated)) // a write still on its way
     }
 
     @Test

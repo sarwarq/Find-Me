@@ -6,6 +6,7 @@ import com.example.findme.data.Geo
 import com.example.findme.data.TravelMode
 import com.yandex.mapkit.geometry.Point
 import com.example.findme.data.auth.UserProfile
+import com.example.findme.location.SharePolicy
 import com.google.android.gms.tasks.Task
 import com.google.firebase.FirebaseApp
 import com.google.firebase.Timestamp
@@ -284,6 +285,9 @@ class MeetingRepository(context: Context) {
                 "etaSeconds" to etaSeconds,
                 "remainingMeters" to remainingMeters,
                 "updatedAt" to FieldValue.serverTimestamp(),
+                // For a Firestore TTL policy on "locations"/"expireAt" (needs the paid Blaze plan,
+                // not enabled yet); until then the clients delete gone positions themselves.
+                "expireAt" to Timestamp(Date(System.currentTimeMillis() + SharePolicy.KEEP_MILLIS)),
             ),
         ).addOnFailureListener { Log.w(TAG, "shareLocation failed", it) }
     }

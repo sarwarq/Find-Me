@@ -56,6 +56,7 @@ class LocationShareService : Service() {
     private var sharing: Sharing? = null
     private var uid: String? = null
     private var lastWrite: Point? = null
+    private var lastAccuracy: Float? = null
     private var lastWriteMillis = 0L
 
     private val callback = object : LocationCallback() {
@@ -109,6 +110,7 @@ class LocationShareService : Service() {
         sharing = next
         uid = user.uid
         lastWrite = null
+        lastAccuracy = null
         lastWriteMillis = 0L
         _state.value = next
 
@@ -159,16 +161,35 @@ class LocationShareService : Service() {
                 return
             }
             ShareDecision.Skip -> return
+            ShareDecision.Resend -> {
+                // Same place as last time, freshly stamped; no speed or heading from a rough fix.
+                val last = lastWrite ?: return
+                repo.shareLocation(
+                    meetingId = s.meetingId,
+                    uid = me,
+                    lat = last.latitude,
+                    lon = last.longitude,
+                    accuracy = lastAccuracy,
+                    heading = null,
+                    speed = null,
+                    arrived = false,
+                    etaSeconds = navProgress?.first,
+                    remainingMeters = navProgress?.second,
+                )
+                lastWriteMillis = now
+                return
+            }
             ShareDecision.Write, ShareDecision.Arrived -> Unit
         }
         val arrived = decision == ShareDecision.Arrived
+        val accuracy = if (loc.hasAccuracy()) loc.accuracy else null
 
         repo.shareLocation(
             meetingId = s.meetingId,
             uid = me,
             lat = loc.latitude,
             lon = loc.longitude,
-            accuracy = if (loc.hasAccuracy()) loc.accuracy else null,
+            accuracy = accuracy,
             heading = if (loc.hasBearing() && loc.speed > 1f) loc.bearing else null,
             speed = if (loc.hasSpeed()) loc.speed else null,
             arrived = arrived,
@@ -176,6 +197,7 @@ class LocationShareService : Service() {
             remainingMeters = navProgress?.second,
         )
         lastWrite = here
+        lastAccuracy = accuracy
         lastWriteMillis = now
 
         if (arrived) {

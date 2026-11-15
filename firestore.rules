@@ -7,6 +7,8 @@ rules_version = '2';
 //                     anyone with the meeting id (from an invite) may add ONLY themselves.
 // invites/{code}      read one by its code (no listing); written with the meeting.
 // meetings/{id}/locations/{uid}   live positions: members read, each writes their own.
+//                                 "expireAt" is for a TTL policy (needs Blaze; not enabled):
+//                                 for now, gone positions are deleted by the app itself.
 // meetings/{id}/routes/{uid}      the route a member drives after "Go"; same access.
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -114,7 +116,12 @@ service cloud.firestore {
           && me() in meeting().members
           && request.resource.data.keys().hasOnly(
                ['lat', 'lon', 'accuracy', 'heading', 'speed', 'arrived',
-                'etaSeconds', 'remainingMeters', 'updatedAt'])
+                'etaSeconds', 'remainingMeters', 'updatedAt', 'expireAt'])
+          // TTL field (Firestore deletes the document after it); optional for older app versions,
+          // and at most a day ahead so nobody keeps a position around for good.
+          && (!('expireAt' in request.resource.data)
+              || (request.resource.data.expireAt is timestamp
+                  && request.resource.data.expireAt <= request.time + duration.value(1, 'd')))
           && (!('etaSeconds' in request.resource.data)
               || request.resource.data.etaSeconds == null || request.resource.data.etaSeconds is number)
           && (!('remainingMeters' in request.resource.data)
