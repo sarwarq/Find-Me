@@ -40,6 +40,7 @@ import com.yandex.mapkit.map.CameraPosition
 import com.yandex.mapkit.search.SuggestItem
 import androidx.compose.runtime.snapshotFlow
 import com.example.findme.ui.nav.NavigationService
+import com.example.findme.ui.nav.Phrases
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -113,6 +114,8 @@ class MapViewModel(
         speak = voice::speak,
         beep = voice::beep,
         settings = settings,
+        phrases = { Phrases.of(voice.language) },
+        warmUpVoice = voice::warmUp,
     )
 
     // ---------- Navigation between screens ----------

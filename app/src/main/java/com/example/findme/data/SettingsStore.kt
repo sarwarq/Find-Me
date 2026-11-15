@@ -5,11 +5,18 @@ import android.content.SharedPreferences
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.edit
+import java.util.Locale
 import kotlin.properties.ReadWriteProperty
 import kotlin.reflect.KProperty
 
 /** Kilometers and km/h, or miles and mph. */
 enum class Units(val title: String) { Metric("Kilometers"), Imperial("Miles") }
+
+/** The language of spoken guidance; the screens stay in English. */
+enum class VoiceLanguage(val title: String, val locale: Locale) {
+    English("English", Locale.US),
+    Russian("Русский", Locale("ru", "RU")),
+}
 
 /**
  * The app's settings, remembered between launches. Each one is Compose state, so the screens
@@ -22,6 +29,10 @@ class SettingsStore(context: Context) {
 
     /** Spoken guidance (the sound button in guidance turns the same switch). */
     var voice by pref(true)
+    /** Russian on a phone set to Russian, else English. */
+    var voiceLanguage by pref(
+        if (Locale.getDefault().language == "ru") VoiceLanguage.Russian else VoiceLanguage.English,
+    ) { VoiceLanguage.entries.firstOrNull { e -> e.name == it } }
     /** Say and show the cameras ahead. */
     var cameraAlerts by pref(true)
     /** Beep this many km/h over the limit; 0 = never. */

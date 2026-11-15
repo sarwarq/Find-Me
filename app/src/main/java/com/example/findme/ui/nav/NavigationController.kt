@@ -33,6 +33,10 @@ class NavigationController(
     private val beep: () -> Unit = {},
     /** Camera alerts and the speeding margin. */
     private val settings: SettingsStore? = null,
+    /** The words guidance speaks (the Voice language setting). */
+    private val phrases: () -> Phrases = { EnglishPhrases },
+    /** Starts the speech engine early, so the first prompt isn't late. */
+    private val warmUpVoice: () -> Unit = {},
 ) {
     var active by mutableStateOf(false); private set
     var progress by mutableStateOf<NavProgress?>(null); private set
@@ -89,7 +93,8 @@ class NavigationController(
         }
         tracker = NavTracker(variant, route.mode)
         active = true
-        prompter = VoicePrompter(route.mode)
+        prompter = VoicePrompter(route.mode, phrases)
+        warmUpVoice()
         offRoute = OffRouteDetector.forMode(route.mode)
         location.setTravelMode(route.mode)
         route.to?.let { store.save(it, route.mode, route.stops.toList()) }
@@ -156,7 +161,7 @@ class NavigationController(
         update.reachedStops.forEach { i ->
             val name = route.stops.getOrNull(i)?.name.orEmpty()
             say("Stop ${i + 1} reached: $name")
-            speak("You have reached $name")
+            speak(phrases().stopReached(name))
         }
         if (update.reachedStops.isNotEmpty()) store.updateStops(route.stops.drop(tracker.reachedStops))
         // Cameras switched off in the settings are neither shown nor said.
@@ -165,7 +170,7 @@ class NavigationController(
         progress = shown
         if (update.arrived) {
             say("You have arrived")
-            speak("You have arrived")
+            speak(phrases().arrived)
             stop()
             return
         }
@@ -189,7 +194,7 @@ class NavigationController(
     private fun reroute(here: Point) {
         val left = route.stops.drop(tracker?.reachedStops ?: 0)
         rerouting = true
-        speak("Recalculating the route")
+        speak(phrases().recalculating)
         route.reroute(Waypoint("Current location", here.latitude, here.longitude, isMyLocation = true), left) { found ->
             rerouting = false
             if (!active) return@reroute

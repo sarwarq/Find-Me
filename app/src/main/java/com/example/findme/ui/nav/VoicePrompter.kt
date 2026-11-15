@@ -6,16 +6,18 @@ import com.example.findme.data.Maneuver
 import com.example.findme.data.RoadEventKind
 import com.example.findme.data.TransitStep
 import com.example.findme.data.TravelMode
-import com.example.findme.data.rideName
 import kotlin.math.max
-import kotlin.math.roundToInt
 
 /**
  * What to say in guidance and when, like a car navigator: "In 400 meters, turn right" early,
  * "Turn right" at the turn, each once. For public transport, each new step once.
  * Plain logic, no Android: the speaking is done elsewhere.
  */
-class VoicePrompter(private val mode: TravelMode) {
+class VoicePrompter(
+    private val mode: TravelMode,
+    /** The words, read for every phrase: the Voice language setting may change on the way. */
+    private val phrases: () -> Phrases = { EnglishPhrases },
+) {
 
     /** The maneuver the prompts below are about (its track segment). */
     private var maneuverSegment = -1
@@ -39,7 +41,8 @@ class VoicePrompter(private val mode: TravelMode) {
             saidEarly = false
             saidNow = false
         }
-        val action = actionText(p.next) ?: return null
+        val say = phrases()
+        val action = say.action(p.next) ?: return null
         val speed = speedMps ?: 0.0
         val (earlyM, earlyS, nowM, nowS) = when (mode) {
             TravelMode.Car -> Limits(400.0, 30.0, 50.0, 5.0)
@@ -58,7 +61,7 @@ class VoicePrompter(private val mode: TravelMode) {
             }
             d <= early && !saidEarly -> {
                 saidEarly = true
-                "In ${distanceWords(d)}, $action"
+                say.inDistance(d, action)
             }
             else -> null
         }
@@ -73,19 +76,16 @@ class VoicePrompter(private val mode: TravelMode) {
         if (e.id in saidEvents) return null
         if (p.eventInMeters > max(EVENT_EARLY_M, (speedMps ?: 0.0) * EVENT_EARLY_S)) return null
         saidEvents += e.id
-        return eventText(e.kind) + if (e.kind == RoadEventKind.SpeedCamera && e.limitKmh != null) ", limit ${Geo.speed(e.limitKmh)}" else ""
+        val say = phrases()
+        return say.event(e.kind) + if (e.kind == RoadEventKind.SpeedCamera && e.limitKmh != null) say.limit(Geo.speed(e.limitKmh)) else ""
     }
 
     private fun transit(p: NavProgress, steps: List<TransitStep>): String? {
         if (p.step < 0 || p.step == transitStep) return null
         transitStep = p.step
         val step = steps.getOrNull(p.step) ?: return null
-        if (step.kind == LegKind.Transport) {
-            val ride = rideName(step).replaceFirst("Ride", "line").replaceFirstChar { it.lowercase() }
-            return "Take $ride" + step.toStop?.let { " to $it" }.orEmpty()
-        }
-        val stop = steps.getOrNull(p.step + 1)?.fromStop
-        return if (stop != null) "Walk to the stop $stop" else "Walk to your destination"
+        if (step.kind == LegKind.Transport) return phrases().takeRide(step)
+        return phrases().walkTo(steps.getOrNull(p.step + 1)?.fromStop)
     }
 
     private data class Limits(val earlyM: Double, val earlyS: Double, val nowM: Double, val nowS: Double)
@@ -94,60 +94,13 @@ class VoicePrompter(private val mode: TravelMode) {
         private const val EVENT_EARLY_M = 300.0
         private const val EVENT_EARLY_S = 20.0
 
-        fun eventText(kind: RoadEventKind): String = when (kind) {
-            RoadEventKind.SpeedCamera -> "Speed camera ahead"
-            RoadEventKind.LaneCamera -> "Lane camera ahead"
-            RoadEventKind.Camera -> "Camera ahead"
-            RoadEventKind.Police -> "Police ahead"
-            RoadEventKind.Accident -> "Accident ahead"
-            RoadEventKind.Works -> "Road works ahead"
-            RoadEventKind.Closed -> "Road closed ahead"
-            RoadEventKind.Danger -> "Caution ahead"
-            RoadEventKind.School -> "School zone ahead"
-        }
+        /** English, for the screens and the notification (the app's own language). */
+        fun eventText(kind: RoadEventKind): String = EnglishPhrases.event(kind)
 
         /** "turn right", or null for going straight on (nothing to say). */
-        fun actionText(m: Maneuver): String? = when (m) {
-            Maneuver.Straight -> null
-            Maneuver.SlightLeft -> "bear left"
-            Maneuver.SlightRight -> "bear right"
-            Maneuver.Left -> "turn left"
-            Maneuver.Right -> "turn right"
-            Maneuver.HardLeft -> "turn sharp left"
-            Maneuver.HardRight -> "turn sharp right"
-            Maneuver.ForkLeft -> "keep left"
-            Maneuver.ForkRight -> "keep right"
-            Maneuver.UturnLeft, Maneuver.UturnRight -> "make a U-turn"
-            Maneuver.Roundabout -> "enter the roundabout"
-            Maneuver.RoundaboutExit -> "take the exit"
-            Maneuver.Finish -> "you will arrive at your destination"
-        }
-
-        /** "500 feet", "0.3 miles", "1.5 miles". */
-        private fun imperialWords(meters: Double): String {
-            val miles = meters / Geo.METERS_PER_MILE
-            if (miles < 0.1) return "${((meters * Geo.FEET_PER_METER / 100).roundToInt() * 100).coerceAtLeast(100)} feet"
-            if (miles < 1) return "${(miles * 10).roundToInt() / 10.0} miles"
-            val half = (miles * 2).roundToInt() / 2.0
-            return when {
-                half == 1.0 -> "1 mile"
-                half % 1.0 == 0.0 -> "${half.toInt()} miles"
-                else -> "$half miles"
-            }
-        }
+        fun actionText(m: Maneuver): String? = EnglishPhrases.action(m)
 
         /** "300 meters", "1.5 kilometers": rounded the way people say it. */
-        fun distanceWords(meters: Double): String {
-        if (Geo.imperial) return imperialWords(meters)
-            val step = if (meters < 200) 50 else 100
-            val m = ((meters / step).roundToInt() * step).coerceAtLeast(50)
-            if (m < 1000) return "$m meters"
-            val km = (meters / 500).roundToInt() / 2.0
-            return when {
-                km == 1.0 -> "1 kilometer"
-                km % 1.0 == 0.0 -> "${km.toInt()} kilometers"
-                else -> "$km kilometers"
-            }
-        }
+        fun distanceWords(meters: Double): String = EnglishPhrases.distanceWords(meters)
     }
 }

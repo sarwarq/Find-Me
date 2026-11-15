@@ -32,6 +32,7 @@ import com.example.findme.container
 import com.example.findme.data.Geo
 import com.example.findme.data.NightMode
 import com.example.findme.data.Units
+import com.example.findme.data.VoiceLanguage
 import com.example.findme.ui.components.CapsLabel
 import com.example.findme.ui.components.SegmentedControl
 import com.example.findme.ui.components.YSwitch
@@ -67,6 +68,19 @@ fun SettingsSheet(onClose: () -> Unit) {
 
             Group("Guidance") {
                 SwitchRow("Voice prompts", "Turns, cameras, arrival", s.voice) { container.voice.setMuted(!it) }
+                Divider()
+                ChoiceRow("Voice language", VOICE_LANGUAGES.map { it.title }, VOICE_LANGUAGES.indexOf(s.voiceLanguage)) {
+                    s.voiceLanguage = VOICE_LANGUAGES[it]
+                }
+                if (container.voice.missing == s.voiceLanguage) {
+                    Text(
+                        "This phone has no ${s.voiceLanguage.title} voice, so guidance speaks English. " +
+                            "Install it in Android settings → Text-to-speech.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = yPalette.textSecondary,
+                        modifier = Modifier.padding(bottom = 10.dp),
+                    )
+                }
                 Divider()
                 SwitchRow("Speed camera alerts", null, s.cameraAlerts) { s.cameraAlerts = it }
                 Divider()
@@ -119,6 +133,7 @@ private val SPEEDING_MARGINS = listOf(0, 5, 10, 20)
 
 private val THEMES = listOf(NightMode.Auto, NightMode.Off, NightMode.On)
 private val UNITS = listOf(Units.Metric, Units.Imperial)
+private val VOICE_LANGUAGES = VoiceLanguage.entries
 
 private fun themeTitle(mode: NightMode) = when (mode) {
     NightMode.Auto -> "Auto"
