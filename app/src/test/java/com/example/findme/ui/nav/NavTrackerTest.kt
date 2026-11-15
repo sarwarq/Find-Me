@@ -246,6 +246,7 @@ class NavTrackerTest {
         val car = NavTracker(variant(lineNorth(1000.0)), TravelMode.Car)
         assertTrue(car.at(25.0, 300.0).onRoute)
         assertTrue(car.snapsArrow)
+        assertTrue("bikes are drawn on the route, like in OM", NavTracker(variant(lineNorth(1000.0)), TravelMode.Bike).snapsArrow)
     }
 
     @Test

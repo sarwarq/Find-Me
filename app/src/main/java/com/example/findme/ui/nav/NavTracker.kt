@@ -85,10 +85,10 @@ class NavTracker(private val variant: RouteVariant, mode: TravelMode = TravelMod
     private val matchM = matchingMeters(mode)
 
     /**
-     * Whether the arrow is drawn on the road. Like OM, walkers and riders are shown where GPS
-     * puts them: their paths cut across squares and pavements the route line doesn't follow.
+     * Whether the arrow is drawn on the road. Like OM, walkers are shown where GPS puts them:
+     * their paths cut across squares and pavements the route line doesn't follow.
      */
-    val snapsArrow = mode == TravelMode.Car || mode == TravelMode.Transit
+    val snapsArrow = mode != TravelMode.Walk
 
     private var segment = 0
     private var segmentT = 0.0

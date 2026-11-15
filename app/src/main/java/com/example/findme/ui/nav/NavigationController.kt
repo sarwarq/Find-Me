@@ -42,7 +42,7 @@ class NavigationController(
     var rerouting by mutableStateOf(false); private set
 
     private var tracker: NavTracker? = null
-    private val offRoute = OffRouteDetector()
+    private var offRoute = OffRouteDetector()
     private val overspeed = OverspeedAlarm()
     private var prompter: VoicePrompter? = null
     /** Where I'm going: along the road on the route, else from GPS / movement. */
@@ -90,7 +90,7 @@ class NavigationController(
         tracker = NavTracker(variant, route.mode)
         active = true
         prompter = VoicePrompter(route.mode)
-        offRoute.reset()
+        offRoute = OffRouteDetector.forMode(route.mode)
         location.setTravelMode(route.mode)
         route.to?.let { store.save(it, route.mode, route.stops.toList()) }
         track(me, speed = null)
@@ -149,7 +149,7 @@ class NavigationController(
         val tracker = tracker ?: return
         val update = tracker.update(fix.point, speed, System.currentTimeMillis(), fix.accuracyM, fix.heading)
         heading = update?.routeHeading ?: fix.heading ?: heading
-        // Walkers and riders: the arrow stays at the GPS point (see NavTracker.snapsArrow).
+        // Walkers: the arrow stays at the GPS point (see NavTracker.snapsArrow).
         along = update?.takeIf { it.onRoute && tracker.snapsArrow }?.alongMeters
         this.speed = speed
         if (update == null) return
@@ -173,13 +173,13 @@ class NavigationController(
         if (margin > 0 && overspeed.update(shown.speedKmh, shown.limitKmh, SystemClock.elapsedRealtime(), margin)) beep()
         // Transit routes are not rebuilt: a bus does not follow the drawn line exactly.
         if (route.mode != TravelMode.Transit && !rerouting &&
-            offRoute.update(update.offRouteMeters, SystemClock.elapsedRealtime())
+            offRoute.update(update.onRoute, update.offRouteMeters, speed, SystemClock.elapsedRealtime())
         ) {
             reroute(fix.point)
             return
         }
         // Off the route the distances to the turns mean nothing.
-        if (update.offRouteMeters < OFF_ROUTE_M && !rerouting) {
+        if (update.onRoute && !rerouting) {
             prompter?.update(update.progress, route.currentVariant?.steps.orEmpty(), speed)?.let(speak)
             prompter?.event(shown, speed)?.let(speak)
         }
@@ -212,10 +212,5 @@ class NavigationController(
 
     private fun follow(point: Point, moveCamera: Boolean = true) {
         commands.tryEmit(MapCommand.Follow(point, heading, moveCamera, along, speed))
-    }
-
-    private companion object {
-        /** Farther than this from the route, I'm off it (as [OffRouteDetector] counts). */
-        const val OFF_ROUTE_M = 50.0
     }
 }
