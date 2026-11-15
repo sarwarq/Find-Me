@@ -13,6 +13,7 @@ import com.example.findme.data.RoadLane
 import com.example.findme.data.RouteEvent
 import com.example.findme.data.RouteVariant
 import com.example.findme.data.TransitStep
+import com.example.findme.data.TravelMode
 import com.yandex.mapkit.geometry.Point
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -40,8 +41,9 @@ class NavTrackerTest {
     )
 
     /** One position fix [east]/[north] meters from the origin. */
-    private fun NavTracker.at(east: Double, north: Double, speed: Double? = null): NavUpdate =
-        requireNotNull(update(pt(east, north), speed, now))
+    private fun NavTracker.at(
+        east: Double, north: Double, speed: Double? = null, accuracy: Double? = null, course: Float? = null,
+    ): NavUpdate = requireNotNull(update(pt(east, north), speed, now, accuracy, course))
 
     // ---------- Distance and time ----------
 
@@ -185,6 +187,71 @@ class NavTrackerTest {
         // Closer to the way back, but I've only just started: still on the way there.
         val u = t.at(8.0, 100.0)
         assertTrue("remaining ${u.progress.remainingMeters}", u.progress.remainingMeters > 800)
+    }
+
+    // ---------- Matching to the route (after Organic Maps) ----------
+
+    /** There and back: north 500 m, then south again 20 m to the east, 1 point per meter. */
+    private val thereAndBack = (0..500).map { pt(0.0, it.toDouble()) } + (500 downTo 0).map { pt(20.0, it.toDouble()) }
+
+    @Test
+    fun `coming back on the other side of the road, the part going my way is taken`() {
+        val t = NavTracker(variant(thereAndBack))
+        t.at(0.0, 100.0, speed = 10.0, course = 0f)
+        // Fixes lost up to the turn; now I drive south, 1 m from the way there.
+        val u = t.at(19.0, 300.0, speed = 10.0, course = 180f)
+        assertTrue(u.onRoute)
+        assertEquals(300.0, u.progress.remainingMeters, 5.0)
+    }
+
+    @Test
+    fun `without a course the first close part of the route is taken`() {
+        val t = NavTracker(variant(thereAndBack))
+        t.at(0.0, 100.0)
+        val u = t.at(19.0, 300.0) // standing: GPS course not trusted
+        assertEquals(720.0, u.progress.remainingMeters, 5.0) // still on the way there (1020 m in all)
+    }
+
+    @Test
+    fun `after lost GPS the route is picked up further along`() {
+        val t = NavTracker(variant(lineNorth(1000.0)))
+        t.at(0.0, 100.0)
+        val u = t.at(3.0, 700.0)
+        assertTrue(u.onRoute)
+        assertEquals(300.0, u.progress.remainingMeters, 3.0)
+    }
+
+    @Test
+    fun `never goes back along the route`() {
+        val t = NavTracker(variant(lineNorth(1000.0)))
+        t.at(0.0, 650.0)
+        assertEquals(350.0, t.at(0.0, 300.0).progress.remainingMeters, 3.0)
+    }
+
+    @Test
+    fun `getting on the route takes closer than staying on it`() {
+        val t = NavTracker(variant(lineNorth(1000.0))) // car: 50 m, 40 m to get on
+        assertFalse(t.at(45.0, 300.0).onRoute)
+        assertTrue(t.at(30.0, 310.0).onRoute)
+        assertTrue("stays on at 45 m", t.at(45.0, 320.0).onRoute)
+        assertFalse(t.at(55.0, 330.0).onRoute)
+        assertFalse("back on only within 40 m", t.at(45.0, 340.0).onRoute)
+    }
+
+    @Test
+    fun `walkers match closer to the route and are not drawn on it`() {
+        val walk = NavTracker(variant(lineNorth(1000.0)), TravelMode.Walk)
+        assertFalse(walk.at(25.0, 300.0).onRoute)
+        assertFalse(walk.snapsArrow)
+        val car = NavTracker(variant(lineNorth(1000.0)), TravelMode.Car)
+        assertTrue(car.at(25.0, 300.0).onRoute)
+        assertTrue(car.snapsArrow)
+    }
+
+    @Test
+    fun `poor GPS accuracy widens the matching`() {
+        val walk = NavTracker(variant(lineNorth(1000.0)), TravelMode.Walk)
+        assertTrue(walk.at(25.0, 300.0, accuracy = 40.0).onRoute)
     }
 
     // ---------- Stops on the way ----------

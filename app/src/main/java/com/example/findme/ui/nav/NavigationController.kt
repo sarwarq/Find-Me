@@ -87,7 +87,7 @@ class NavigationController(
             say("No navigation for this travel mode")
             return
         }
-        tracker = NavTracker(variant)
+        tracker = NavTracker(variant, route.mode)
         active = true
         prompter = VoicePrompter(route.mode)
         offRoute.reset()
@@ -147,9 +147,10 @@ class NavigationController(
 
     private fun track(fix: LocationFix, speed: Double?) {
         val tracker = tracker ?: return
-        val update = tracker.update(fix.point, speed, System.currentTimeMillis())
+        val update = tracker.update(fix.point, speed, System.currentTimeMillis(), fix.accuracyM, fix.heading)
         heading = update?.routeHeading ?: fix.heading ?: heading
-        along = update?.takeIf { it.onRoute }?.alongMeters
+        // Walkers and riders: the arrow stays at the GPS point (see NavTracker.snapsArrow).
+        along = update?.takeIf { it.onRoute && tracker.snapsArrow }?.alongMeters
         this.speed = speed
         if (update == null) return
         update.reachedStops.forEach { i ->
@@ -197,7 +198,7 @@ class NavigationController(
                 say("Could not rebuild the route")
                 return@reroute
             }
-            tracker = NavTracker(variant)
+            tracker = NavTracker(variant, route.mode)
             offRoute.reset()
             prompter?.reset()
             route.to?.let { store.save(it, route.mode, route.stops.toList()) }

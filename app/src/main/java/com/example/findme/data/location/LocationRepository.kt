@@ -23,8 +23,9 @@ import java.lang.ref.WeakReference
 /**
  * One position of the phone. [heading] is where I'm going (0 = north): the GPS course when
  * moving, else the direction of my last move; it keeps the last value while I stand still.
+ * [accuracyM]: how far off the point may be, in meters; null when unknown.
  */
-class LocationFix(val point: Point, val speedMps: Double?, val heading: Float?)
+class LocationFix(val point: Point, val speedMps: Double?, val heading: Float?, val accuracyM: Double? = null)
 
 /**
  * The phone's position for the whole app while it is open (map, meet-ups), from MapKit.
@@ -42,7 +43,7 @@ object LocationRepository {
         override fun onLocationUpdated(location: Location) {
             val pos = location.position
             val heading = headings.update(pos, location.speed, location.heading)
-            _fix.value = LocationFix(pos, location.speed, heading)
+            _fix.value = LocationFix(pos, location.speed, heading, location.accuracy)
         }
 
         override fun onLocationStatusUpdated(status: LocationStatus) = Unit
