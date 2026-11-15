@@ -51,8 +51,11 @@ object LocationRepository {
 
     /** What the fixes are for: MapKit filters and snaps them differently for a car or a walk. */
     private var purpose = Purpose.GENERAL
+    /** Guidance is on: fixes keep coming with the screen off (NavigationService keeps us alive). */
+    private var background = false
 
-    private fun settings() = SubscriptionSettings(UseInBackground.DISALLOW, purpose)
+    private fun settings() =
+        SubscriptionSettings(if (background) UseInBackground.ALLOW else UseInBackground.DISALLOW, purpose)
 
     /** Starts the updates; call once location permission is granted. MapKit must be initialized. */
     fun start() {
@@ -62,7 +65,7 @@ object LocationRepository {
         }
     }
 
-    /** Guidance in [mode] (null when it ends): asks MapKit for fixes tuned to that travel. */
+    /** Guidance in [mode] (null when it ends): asks MapKit for fixes tuned to that travel, also in the background. */
     fun setTravelMode(mode: TravelMode?) {
         val next = when (mode) {
             TravelMode.Car -> Purpose.AUTOMOTIVE_NAVIGATION
@@ -71,8 +74,9 @@ object LocationRepository {
             TravelMode.Scooter -> Purpose.SCOOTER_NAVIGATION
             TravelMode.Transit, null -> Purpose.GENERAL // a bus ride is neither a walk nor a drive
         }
-        if (next == purpose) return
+        if (next == purpose && background == (mode != null)) return
         purpose = next
+        background = mode != null
         val source = simulator ?: manager ?: return
         source.unsubscribe(WeakReference(listener))
         source.subscribeForLocationUpdates(settings(), WeakReference(listener))

@@ -11,6 +11,7 @@ import com.example.findme.data.SettingsStore
 import com.example.findme.data.Units
 import com.example.findme.data.auth.AuthRepository
 import com.example.findme.data.location.LocationRepository
+import com.example.findme.ui.nav.NavigationService
 import com.example.findme.data.meet.MeetingRepository
 import com.example.findme.maps.PlaceSearchService
 import com.example.findme.maps.RouteAvoid
@@ -62,6 +63,8 @@ class AppContainer(private val app: Application) {
                 location = location,
                 voice = voice,
                 settings = settings,
+                guidanceNotice = { n -> if (n == null) NavigationService.hide(app) else NavigationService.show(app, n) },
+                guidanceStops = NavigationService.stopRequests,
             )
         }
         initializer { MeetViewModel(app, meetings, navStore, location, settings) }

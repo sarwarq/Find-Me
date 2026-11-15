@@ -12,6 +12,10 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import com.example.findme.location.LocationShareService
 import com.example.findme.update.UpdateGate
 import com.example.findme.update.UpdateRequiredScreen
@@ -34,6 +38,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // Opened by an invite link; skip it when the activity is only being recreated.
         if (savedInstanceState == null) handleInvite(intent)
+        // Guidance ended in the background (arrived, or "Stop" in the notification): MapKit rests.
+        lifecycleScope.launch {
+            snapshotFlow { vm.nav.active }.collect { active ->
+                if (!active && !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) stopMapKit()
+            }
+        }
         setContent {
             val dark = vm.isDark(isSystemInDarkTheme())
             DisposableEffect(dark) {
@@ -101,13 +111,28 @@ class MainActivity : ComponentActivity() {
         meetVm.openJoin(code)
     }
 
+    /** MapKit runs: on screen, and in the background while guidance is on (Yandex: it must stay resumed). */
+    private var mapKitRunning = false
+
     override fun onStart() {
         super.onStart()
-        MapKitFactory.getInstance().onStart()
+        if (!mapKitRunning) MapKitFactory.getInstance().onStart()
+        mapKitRunning = true
     }
 
     override fun onStop() {
-        MapKitFactory.getInstance().onStop()
+        if (!vm.nav.active) stopMapKit()
         super.onStop()
+    }
+
+    override fun onDestroy() {
+        stopMapKit()
+        super.onDestroy()
+    }
+
+    private fun stopMapKit() {
+        if (!mapKitRunning) return
+        mapKitRunning = false
+        MapKitFactory.getInstance().onStop()
     }
 }

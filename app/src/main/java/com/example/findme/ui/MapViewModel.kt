@@ -38,7 +38,12 @@ import com.yandex.mapkit.geometry.Geometry
 import com.yandex.mapkit.geometry.Point
 import com.yandex.mapkit.map.CameraPosition
 import com.yandex.mapkit.search.SuggestItem
+import androidx.compose.runtime.snapshotFlow
+import com.example.findme.ui.nav.NavigationService
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -87,6 +92,10 @@ class MapViewModel(
     val voice: Voice,
     /** Theme, units, what guidance says. */
     val settings: SettingsStore,
+    /** The background guidance notification: shows this, or goes away on null. */
+    private val guidanceNotice: (NavigationService.Notice?) -> Unit = {},
+    /** "Stop" pressed in that notification. */
+    private val guidanceStops: Flow<Unit> = emptyFlow(),
 ) : ViewModel() {
 
     val commands = MutableSharedFlow<MapCommand>(extraBufferCapacity = 16)
@@ -168,6 +177,13 @@ class MapViewModel(
                 if ((cmd is MapCommand.MoveTo && !cmd.toMe) || cmd is MapCommand.Fit) following = false
             }
         }
+        // Guidance goes on in the background with a notification of the next turn.
+        viewModelScope.launch {
+            snapshotFlow { if (nav.active) NavigationService.noticeFor(nav.progress, nav.rerouting) else null }
+                .distinctUntilChanged()
+                .collect(guidanceNotice)
+        }
+        viewModelScope.launch { guidanceStops.collect { if (nav.active) nav.stop() } }
     }
 
     // =====================================================================
@@ -604,6 +620,7 @@ class MapViewModel(
     }
 
     override fun onCleared() {
+        guidanceNotice(null) // the guidance is gone with the screen; it resumes on the next start
         location.stop()
         routeService.cancelAll()
         routeService.cancelEtas()

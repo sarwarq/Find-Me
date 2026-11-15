@@ -177,8 +177,21 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
         vm.currentZoom = null
     }
 
-    fun onStart() = mapView.onStart()
-    fun onStop() = mapView.onStop()
+    /** The map is on screen; off it (guidance in the background) no frames are drawn. */
+    private var visible = true
+
+    fun onStart() {
+        mapView.onStart()
+        visible = true
+        if (motion != null) startFrames()
+    }
+
+    fun onStop() {
+        visible = false
+        frameLoop?.cancel() // the arrow and camera catch up from the latest fix on return
+        frameLoop = null
+        mapView.onStop()
+    }
 
     // ---------------------------------------------------------------------
     // Layers
@@ -772,7 +785,7 @@ class MapEngine(private val context: Context, private val vm: MapViewModel) {
 
     /** Runs [onFrame] on every screen frame while guiding. */
     private fun startFrames() {
-        if (frameLoop != null) return
+        if (frameLoop != null || !visible) return
         lastFrameMs = SystemClock.uptimeMillis()
         frameLoop = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = 1_000

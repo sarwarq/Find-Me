@@ -57,6 +57,12 @@
             android:exported="false"
             android:foregroundServiceType="location" />
 
+        <!-- Guidance with the screen off: the next turn in a notification. -->
+        <service
+            android:name=".ui.nav.NavigationService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
         <!-- Result of installing an update; only our PendingIntent reaches it. -->
         <receiver
             android:name=".update.InstallResultReceiver"
