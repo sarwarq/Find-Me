@@ -5,6 +5,13 @@
 -keep class com.yandex.** { *; }
 -dontwarn com.yandex.**
 
+# MapKit holds listeners only through WeakReference, so our fields are what keeps them alive.
+# Fields like MapEngine.inputListener are read only once, when the listener is added, and R8
+# would remove them: the GC then drops the listeners and map taps and camera moves go unheard.
+-keepclassmembers class com.example.findme.** {
+    *** *Listener;
+}
+
 # Credential Manager finds its Google Play services provider by reflection.
 -if class androidx.credentials.CredentialManager
 -keep class androidx.credentials.playservices.** { *; }
