@@ -39,8 +39,10 @@ class MainActivity : ComponentActivity() {
         // Opened by an invite link; skip it when the activity is only being recreated.
         if (savedInstanceState == null) handleInvite(intent)
         // Guidance ended in the background (arrived, or "Stop" in the notification): MapKit rests.
+        // The ViewModel is made here, not inside snapshotFlow: its state can't be created in a read-only snapshot.
+        val nav = vm.nav
         lifecycleScope.launch {
-            snapshotFlow { vm.nav.active }.collect { active ->
+            snapshotFlow { nav.active }.collect { active ->
                 if (!active && !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) stopMapKit()
             }
         }
